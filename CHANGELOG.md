@@ -105,6 +105,7 @@ ecosystem repos:
 - [`alpibrusl/lex-lang#436`](https://github.com/alpibrusl/lex-lang/issues/436) — `std.net` middleware seam so downstream HTTP libs (lex-ocpi, future lex-rest, …) don't have to depend on `lex-web` just to get URL pattern matching + CORS / body-limit / request-id.
 - [`alpibrusl/lex-lang#438`](https://github.com/alpibrusl/lex-lang/issues/438) — `match` guard clauses (`c if pred => …`) for dispatching on derived predicates. Hit by `status.to_message` (15-deep `if-else` chain).
 - [`alpibrusl/lex-lang#439`](https://github.com/alpibrusl/lex-lang/issues/439) — Anonymous record literals don't coerce to user-defined parametric record aliases (`type Page[T] = { items :: List[T], … }`). Hit while building `src/pagination.lex`.
+- [`alpibrusl/lex-lang#440`](https://github.com/alpibrusl/lex-lang/issues/440) — `std.str` doesn't expose `cmp` / `lt` / `le` / `gt` / `ge` comparators. Hand-rolled in `src/filters.lex` for ISO-8601 lexicographic comparison.
 
 ### What's deferred
 
