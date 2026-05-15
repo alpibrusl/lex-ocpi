@@ -47,6 +47,7 @@ align with `lex.toml`'s `version` field.
 - Pure handler registry + dispatch keyed by `(method, module)` (`src/route.lex`)
 - Effectful registry with `[io, time, sql]` upper bound for handlers that persist via lex-orm (`src/route_io.lex`)
 - Outbound HTTP client wrapping `std.http` with OCPI eight-header preset + envelope decode (`src/client.lex`)
+- Pagination helpers (`src/pagination.lex`) — `from_query` / `clamp_limit` / `paginate` / `headers` covering the `?offset/?limit` + `X-Total-Count` + `Link: rel="next"` shape every OCPI list endpoint shares
 
 **Tooling:**
 
@@ -73,11 +74,14 @@ align with `lex.toml`'s `version` field.
 - `test_v221_hubchargingprofiles.lex` — HubClientInfo + ChargingProfiles
 - `test_v230_schemas.lex` — 2.3.0 Connector (CHAOJI, NEMA_5_20), EVSE (ISO_15118_20_PLUG_CHARGE), Payment, PaymentInfo
 - `test_gen.lex` — codegen output shape (required/optional, enum→StrOneOf, length/min constraints, snake_case)
+- `test_pagination.lex` — query parsing, clamp_limit, slice math, has_more, X-Total-Count + Link headers
 - `test_property.lex` (runs under `[random]`) — schema/validator round-trip
 
-**Example:**
+**Examples:**
 
-- `examples/cpo_v221.lex` — minimal OCPI 2.2.1 CPO over `std.net.serve_fn` (no lex-web dep). Versions discovery + a hard-coded Location endpoint. End-to-end verified.
+- `examples/cpo_v221.lex` — minimal OCPI 2.2.1 CPO over `std.net.serve_fn` (no lex-web dep). Versions discovery + a hard-coded Location endpoint.
+- `examples/emsp_client.lex` — eMSP side: walks the OCPI discovery flow against a running CPO. Uses `src/client.lex`'s `get_with_token` + structured `ClientError` decode. End-to-end verified against `cpo_v221.lex`: versions → endpoints → location read → unknown-location 2003 envelope.
+- `examples/export_schemas.lex` — same `ModelSchema` value, four downstream targets: JSON Schema 2020-12, OpenAPI 3.1 component, TypeScript interface, Pydantic v2 class. The "OCPI schemas are the source of truth for every consumer" story.
 
 **CI:**
 
@@ -90,6 +94,8 @@ ecosystem repos:
 
 - [`alpibrusl/lex-lang#435`](https://github.com/alpibrusl/lex-lang/issues/435) — `?` / `try` syntactic sugar for `Result` / `Option` early-return. The pyramid-of-match pattern dominates every validator wrapper and field decoder.
 - [`alpibrusl/lex-lang#436`](https://github.com/alpibrusl/lex-lang/issues/436) — `std.net` middleware seam so downstream HTTP libs (lex-ocpi, future lex-rest, …) don't have to depend on `lex-web` just to get URL pattern matching + CORS / body-limit / request-id.
+- [`alpibrusl/lex-lang#438`](https://github.com/alpibrusl/lex-lang/issues/438) — `match` guard clauses (`c if pred => …`) for dispatching on derived predicates. Hit by `status.to_message` (15-deep `if-else` chain).
+- [`alpibrusl/lex-lang#439`](https://github.com/alpibrusl/lex-lang/issues/439) — Anonymous record literals don't coerce to user-defined parametric record aliases (`type Page[T] = { items :: List[T], … }`). Hit while building `src/pagination.lex`.
 
 ### What's deferred
 
