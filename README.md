@@ -65,8 +65,20 @@ CPO↔eMSP side (HTTP/REST-based).
 - **Agent skill manifest** (`SKILL.md`). Discovery surface an LLM agent
   reads to emit OCPI code against this library; every entry maps to a
   Lex function with a stable `SigId`.
-- **One runnable example**: a minimal CPO server that walks the
-  Versions discovery flow + serves a hard-coded Location.
+- **Outbound HTTP client** (`src/client.lex`). Wraps `std.http`
+  with the OCPI eight-header preset (`Authorization: Token …`,
+  `X-Request-ID`, `X-Correlation-ID`, the four `OCPI-from/to-*`)
+  and the envelope-decode happy path. Returns `ClientError` —
+  `HttpFailed` (transport), `BadEnvelope` (decode), `OcpiError`
+  (2xxx/3xxx/4xxx envelope). Effect: `[net]`.
+- **Effectful registry** (`src/route_io.lex`). Lex-ocpp parity:
+  handlers carry an `[io, time, sql]` upper bound so they can log
+  via `io.print`, stamp `last_updated`, and persist via lex-orm's
+  `[sql]`-flavoured helpers.
+- **OCPI 2.1.1 surface** (`src/v211/`). Same shape as the v2.2.1
+  surface, with the spec deltas baked in: flat Credentials (no
+  `roles[]`), `auth_id` instead of `CdrToken`, smaller enum
+  catalogues (no APP_USER, no RESERVATION, no PED_TERMINAL).
 
 ## Quickstart
 
@@ -129,6 +141,9 @@ src/
   versions.lex            Versions + VersionDetail + Endpoint
   credentials.lex         Credentials handshake objects + schema
   route.lex               Pure handler registry + dispatch
+  route_io.lex            Effectful registry (`[io, time, sql]` upper bound)
+  client.lex              Outbound OCPI HTTP client (`[net]`)
+  v211/                   OCPI 2.1.1 surface (enums + Credentials + 5 schemas)
   v221/
     enums.lex             OCPI 2.2.1 enums (LocationType, ConnectorType, ...)
     locations.lex         Location + EVSE + Connector schemas
