@@ -34,7 +34,7 @@ fn empty_headers() -> headers.OcpiHeaders {
 
 fn empty_req(method :: Str, module :: Str) -> route.OcpiRequest {
   route.request(method, module, str.concat("/", module),
-    map.empty(), map.empty(), empty_headers(), JNull)
+    map.new(), map.new(), empty_headers(), JNull)
 }
 
 fn req_with_body(
@@ -43,7 +43,7 @@ fn req_with_body(
   body   :: jv.Json
 ) -> route.OcpiRequest {
   route.request(method, module, str.concat("/", module),
-    map.empty(), map.empty(), empty_headers(), body)
+    map.new(), map.new(), empty_headers(), body)
 }
 
 fn ts() -> Str { "2026-05-15T10:00:00Z" }

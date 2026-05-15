@@ -24,9 +24,9 @@ fn test_success_code() -> Result[Unit, Str] {
 
 fn test_client_error_codes() -> Result[Unit, Str] {
   if status.invalid_or_missing_parameters() == 2001
-     && status.not_enough_information() == 2002
-     && status.unknown_location() == 2003
-     && status.unknown_token() == 2004 {
+     and status.not_enough_information() == 2002
+     and status.unknown_location() == 2003
+     and status.unknown_token() == 2004 {
     pass()
   } else {
     fail("client-error codes drift from spec")
@@ -35,9 +35,9 @@ fn test_client_error_codes() -> Result[Unit, Str] {
 
 fn test_server_error_codes() -> Result[Unit, Str] {
   if status.server_error() == 3000
-     && status.unable_to_use_api() == 3001
-     && status.unsupported_version() == 3002
-     && status.no_matching_endpoints() == 3003 {
+     and status.unable_to_use_api() == 3001
+     and status.unsupported_version() == 3002
+     and status.no_matching_endpoints() == 3003 {
     pass()
   } else {
     fail("server-error codes drift from spec")
@@ -46,10 +46,10 @@ fn test_server_error_codes() -> Result[Unit, Str] {
 
 fn test_hub_error_codes() -> Result[Unit, Str] {
   if status.hub_error() == 4000
-     && status.missing_or_invalid_parameters() == 4001
-     && status.unknown_receiver() == 4002
-     && status.timeout_on_forwarded_request() == 4003
-     && status.connection_problem() == 4004 {
+     and status.missing_or_invalid_parameters() == 4001
+     and status.unknown_receiver() == 4002
+     and status.timeout_on_forwarded_request() == 4003
+     and status.connection_problem() == 4004 {
     pass()
   } else {
     fail("hub-error codes drift from spec")
@@ -60,9 +60,9 @@ fn test_hub_error_codes() -> Result[Unit, Str] {
 
 fn test_predicates() -> Result[Unit, Str] {
   if status.is_success(1000)
-     && status.is_client_error(2001)
-     && status.is_server_error(3000)
-     && status.is_hub_error(4001) {
+     and status.is_client_error(2001)
+     and status.is_server_error(3000)
+     and status.is_hub_error(4001) {
     pass()
   } else {
     fail("predicates misclassify range members")
@@ -73,7 +73,7 @@ fn test_predicates() -> Result[Unit, Str] {
 
 fn test_to_message_known() -> Result[Unit, Str] {
   if str.is_empty(status.to_message(1000))
-     || str.is_empty(status.to_message(2003)) {
+     or str.is_empty(status.to_message(2003)) {
     fail("known codes should map to non-empty messages")
   } else {
     pass()

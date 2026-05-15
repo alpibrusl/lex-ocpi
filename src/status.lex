@@ -102,7 +102,7 @@ fn to_message(code :: Int) -> Str
   else { if code == timeout_on_forwarded_request() { "Timeout on forwarded request" }
   else { if code == connection_problem()        { "Connection problem" }
   else                                          { "" }
-  } } } } } } } } } } } } } } }
+  } } } } } } } } } } } } } }
 }
 
 # ---- Predicates ---------------------------------------------------
@@ -113,17 +113,17 @@ fn is_success(code :: Int) -> Bool
     is_success(2001) => false,
   }
 {
-  code >= 1000 && code < 2000
+  code >= 1000 and code < 2000
 }
 
 fn is_client_error(code :: Int) -> Bool {
-  code >= 2000 && code < 3000
+  code >= 2000 and code < 3000
 }
 
 fn is_server_error(code :: Int) -> Bool {
-  code >= 3000 && code < 4000
+  code >= 3000 and code < 4000
 }
 
 fn is_hub_error(code :: Int) -> Bool {
-  code >= 4000 && code < 5000
+  code >= 4000 and code < 5000
 }

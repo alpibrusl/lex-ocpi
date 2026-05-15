@@ -166,17 +166,17 @@ fn parse(raw :: Str) -> Result[OcpiResponse, EnvelopeError] {
 # ---- Predicates --------------------------------------------------
 
 fn is_success(r :: OcpiResponse) -> Bool {
-  r.status_code >= 1000 && r.status_code < 2000
+  r.status_code >= 1000 and r.status_code < 2000
 }
 
 fn is_client_error(r :: OcpiResponse) -> Bool {
-  r.status_code >= 2000 && r.status_code < 3000
+  r.status_code >= 2000 and r.status_code < 3000
 }
 
 fn is_server_error(r :: OcpiResponse) -> Bool {
-  r.status_code >= 3000 && r.status_code < 4000
+  r.status_code >= 3000 and r.status_code < 4000
 }
 
 fn is_hub_error(r :: OcpiResponse) -> Bool {
-  r.status_code >= 4000 && r.status_code < 5000
+  r.status_code >= 4000 and r.status_code < 5000
 }

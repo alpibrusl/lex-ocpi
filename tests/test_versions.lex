@@ -24,8 +24,8 @@ fn assert_true(b :: Bool, label :: Str) -> Result[Unit, Str] {
 
 fn test_version_constants() -> Result[Unit, Str] {
   if versions.v211() == "2.1.1"
-     && versions.v221() == "2.2.1"
-     && versions.v230() == "2.3.0" {
+     and versions.v221() == "2.2.1"
+     and versions.v230() == "2.3.0" {
     pass()
   } else {
     fail("version constants drift")
@@ -54,8 +54,8 @@ fn test_endpoint_to_json_shape() -> Result[Unit, Str] {
   let raw := jv.stringify(versions.endpoint_to_json(e))
   assert_true(
     str.contains(raw, "\"identifier\":\"locations\"")
-      && str.contains(raw, "\"role\":\"SENDER\"")
-      && str.contains(raw, "\"url\":\"https://example.com/ocpi/cpo/2.2.1/locations\""),
+      and str.contains(raw, "\"role\":\"SENDER\"")
+      and str.contains(raw, "\"url\":\"https://example.com/ocpi/cpo/2.2.1/locations\""),
     "endpoint JSON shape")
 }
 
@@ -67,8 +67,8 @@ fn test_detail_to_json() -> Result[Unit, Str] {
   let raw := jv.stringify(versions.detail_to_json(d))
   assert_true(
     str.contains(raw, "\"version\":\"2.2.1\"")
-      && str.contains(raw, "\"identifier\":\"locations\"")
-      && str.contains(raw, "\"identifier\":\"credentials\""),
+      and str.contains(raw, "\"identifier\":\"locations\"")
+      and str.contains(raw, "\"identifier\":\"credentials\""),
     "detail JSON shape")
 }
 

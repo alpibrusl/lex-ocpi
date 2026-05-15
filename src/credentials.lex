@@ -117,13 +117,13 @@ type CredentialsRole = {
 
 fn credentials_role(
   role             :: Str,
-  business_details :: BusinessDetails,
+  details          :: BusinessDetails,
   party_id         :: Str,
   country_code     :: Str
 ) -> CredentialsRole {
   {
     role:             role,
-    business_details: business_details,
+    business_details: details,
     party_id:         party_id,
     country_code:     country_code,
   }

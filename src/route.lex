@@ -172,7 +172,7 @@ fn find(reg :: Registry, method :: Str, module :: Str) -> Option[RouteEntry] {
     fn (acc :: Option[RouteEntry], entry :: RouteEntry) -> Option[RouteEntry] {
       match acc {
         Some(_) => acc,
-        None    => if entry.method == method && entry.module == module {
+        None    => if entry.method == method and entry.module == module {
                      Some(entry)
                    } else {
                      None

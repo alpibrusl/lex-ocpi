@@ -105,7 +105,7 @@ fn get_or_empty(headers :: Map[Str, Str], key :: Str) -> Str {
 # pairs with `lex-web`'s request builder.
 
 fn to_map(h :: OcpiHeaders) -> Map[Str, Str] {
-  let m0 := map.empty()
+  let m0 := map.new()
   let m1 := map.set(m0, h_authorization(),     h.authorization)
   let m2 := map.set(m1, h_request_id(),        h.request_id)
   let m3 := map.set(m2, h_correlation_id(),    h.correlation_id)
@@ -143,12 +143,12 @@ fn strip_token_prefix(authz :: Str) -> Option[Str]
 # ---- Predicates --------------------------------------------------
 
 fn has_party_routing(h :: OcpiHeaders) -> Bool {
-  ! str.is_empty(h.from_party.country_code)
-    && ! str.is_empty(h.from_party.party_id)
-    && ! str.is_empty(h.to_party.country_code)
-    && ! str.is_empty(h.to_party.party_id)
+  not str.is_empty(h.from_party.country_code)
+    and not str.is_empty(h.from_party.party_id)
+    and not str.is_empty(h.to_party.country_code)
+    and not str.is_empty(h.to_party.party_id)
 }
 
 fn is_authenticated(h :: OcpiHeaders) -> Bool {
-  ! str.is_empty(h.authorization)
+  not str.is_empty(h.authorization)
 }

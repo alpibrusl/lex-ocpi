@@ -152,41 +152,27 @@ fn registry() -> oroute.Registry {
 
 # ---- HTTP adapter ------------------------------------------------
 #
-# `std.net.serve_fn` hands every handler a Request record and expects
-# a Response record (both structural — `{ method, path, query, body,
-# headers }` in, `{ body, status, headers }` out). We do the URL →
-# (module, path_params) mapping here, hand the resulting `OcpiRequest`
-# to the OCPI dispatcher, and encode the OCPI envelope into the HTTP
-# response body. Effects `[time]` come from stamping the response
-# timestamp.
+# `std.net.serve_fn` hands every handler a built-in `Request` record
+# (`{ method, path, query, body, headers }`) and expects a built-in
+# `Response` (`{ status, body :: ResponseBody, headers }`). We do the
+# URL → (module, path_params) mapping here, hand the resulting
+# `OcpiRequest` to the OCPI dispatcher, and encode the OCPI envelope
+# into the HTTP response body. Effects `[time]` come from stamping
+# the response timestamp.
 
-type HttpRequest = {
-  body    :: Str,
-  method  :: Str,
-  path    :: Str,
-  query   :: Str,
-  headers :: Map[Str, Str],
-}
-
-type HttpResponse = {
-  body    :: Str,
-  status  :: Int,
-  headers :: Map[Str, Str],
-}
-
-fn json_response(body :: Str) -> HttpResponse {
+fn json_response(body :: Str) -> Response {
   {
-    body:    body,
+    body:    BodyStr(body),
     status:  200,
-    headers: map.set(map.empty(), "content-type", "application/json"),
+    headers: map.set(map.new(), "content-type", "application/json"),
   }
 }
 
-fn handle(req :: HttpRequest) -> [time] HttpResponse {
+fn handle(req :: Request) -> [time] Response {
   let m := req.method
   let p := req.path
   let routed := match map_url_to_module(p) {
-    None        => ocpi_request(m, "unknown", p, map.empty(), req),
+    None        => ocpi_request(m, "unknown", p, map.new(), req),
     Some(entry) => ocpi_request(m, entry.module, p, entry.params, req),
   }
   let res := oroute.dispatch(registry(), routed, time.now_str())
@@ -204,17 +190,17 @@ type RouteHit = { module :: Str, params :: Map[Str, Str] }
 
 fn map_url_to_module(path :: Str) -> Option[RouteHit] {
   if path == "/ocpi/versions" {
-    Some({ module: mid.versions(), params: map.empty() })
-  } else { if path == "/ocpi/2.2.1/" || path == "/ocpi/2.2.1" {
-    Some({ module: "version_detail", params: map.empty() })
+    Some({ module: mid.versions(), params: map.new() })
+  } else { if path == "/ocpi/2.2.1/" or path == "/ocpi/2.2.1" {
+    Some({ module: "version_detail", params: map.new() })
   } else { if path == "/ocpi/2.2.1/locations" {
-    Some({ module: mid.locations(), params: map.empty() })
+    Some({ module: mid.locations(), params: map.new() })
   } else { if str.starts_with(path, "/ocpi/2.2.1/locations/") {
     let loc_id := str.slice(path, str.len("/ocpi/2.2.1/locations/"),
                             str.len(path))
     Some({
       module: "location_by_id",
-      params: map.set(map.empty(), "location_id", loc_id),
+      params: map.set(map.new(), "location_id", loc_id),
     })
   } else {
     None
@@ -226,14 +212,14 @@ fn ocpi_request(
   module_name :: Str,
   path        :: Str,
   params      :: Map[Str, Str],
-  req         :: HttpRequest
+  req         :: Request
 ) -> oroute.OcpiRequest {
   let body := match jv.parse(req.body) {
     Err(_)  => JNull,
     Ok(j)   => j,
   }
   let hdrs := h.from_map(req.headers)
-  oroute.request(method, module_name, path, params, map.empty(), hdrs, body)
+  oroute.request(method, module_name, path, params, map.new(), hdrs, body)
 }
 
 # ---- Entry point ------------------------------------------------

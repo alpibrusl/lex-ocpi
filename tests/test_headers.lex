@@ -24,7 +24,7 @@ fn assert_true(b :: Bool, label :: Str) -> Result[Unit, Str] {
 # ---- from_map ---------------------------------------------------
 
 fn full_map() -> Map[Str, Str] {
-  let m0 := map.empty()
+  let m0 := map.new()
   let m1 := map.set(m0, headers.h_authorization(), "Token abc==")
   let m2 := map.set(m1, headers.h_request_id(), "req-1")
   let m3 := map.set(m2, headers.h_correlation_id(), "corr-1")
@@ -37,9 +37,9 @@ fn full_map() -> Map[Str, Str] {
 fn test_from_map_full() -> Result[Unit, Str] {
   let h := headers.from_map(full_map())
   if h.authorization == "Token abc=="
-     && h.request_id == "req-1"
-     && h.from_party.country_code == "NL"
-     && h.to_party.party_id == "BMW" {
+     and h.request_id == "req-1"
+     and h.from_party.country_code == "NL"
+     and h.to_party.party_id == "BMW" {
     pass()
   } else {
     fail("from_map missing fields")
@@ -47,12 +47,12 @@ fn test_from_map_full() -> Result[Unit, Str] {
 }
 
 fn test_from_map_partial() -> Result[Unit, Str] {
-  let m0 := map.empty()
+  let m0 := map.new()
   let m1 := map.set(m0, headers.h_authorization(), "Token xyz")
   let h := headers.from_map(m1)
   if h.authorization == "Token xyz"
-     && h.request_id == ""
-     && str.is_empty(h.from_party.country_code) {
+     and h.request_id == ""
+     and str.is_empty(h.from_party.country_code) {
     pass()
   } else {
     fail("partial map should leave missing fields empty")
@@ -91,8 +91,8 @@ fn test_has_party_routing_true() -> Result[Unit, Str] {
 }
 
 fn test_has_party_routing_false() -> Result[Unit, Str] {
-  let h := headers.from_map(map.empty())
-  assert_true(! headers.has_party_routing(h),
+  let h := headers.from_map(map.new())
+  assert_true(not headers.has_party_routing(h),
     "empty quad should not be considered routed")
 }
 
@@ -103,7 +103,7 @@ fn test_round_trip_to_map() -> Result[Unit, Str] {
   let m := headers.to_map(h)
   let h2 := headers.from_map(m)
   if h.authorization == h2.authorization
-     && headers.has_party_routing(h2) {
+     and headers.has_party_routing(h2) {
     pass()
   } else {
     fail("round trip lost data")

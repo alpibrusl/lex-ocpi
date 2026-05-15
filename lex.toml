@@ -1,7 +1,7 @@
 [package]
 name    = "lex-ocpi"
 version = "0.1.0"
-lex     = "0.9.3"
+lex     = "0.9.4"
 
 # OCPI (Open Charge Point Interface) library for lex-lang.
 # Inspired by https://github.com/elumobility/ocpi-python — same shape

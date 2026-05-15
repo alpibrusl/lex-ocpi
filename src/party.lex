@@ -35,7 +35,7 @@ fn new(country_code :: Str, party_id :: Str) -> PartyId {
 # ---- Equality ----------------------------------------------------
 
 fn eq(a :: PartyId, b :: PartyId) -> Bool {
-  a.country_code == b.country_code && a.party_id == b.party_id
+  a.country_code == b.country_code and a.party_id == b.party_id
 }
 
 # ---- Encoding ----------------------------------------------------
