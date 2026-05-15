@@ -65,6 +65,18 @@ CPO↔eMSP side (HTTP/REST-based).
 - **Agent skill manifest** (`SKILL.md`). Discovery surface an LLM agent
   reads to emit OCPI code against this library; every entry maps to a
   Lex function with a stable `SigId`.
+- **OCPI 2.1.1 surface** (`src/v211/`). Full module set: enums,
+  Locations, Sessions, CDRs, Tokens, Tariffs, Commands,
+  Credentials. The spec deltas vs 2.2.1 baked in: flat Credentials
+  (no `roles[]`), bare `auth_id` (no `CdrToken`), no
+  `CancelReservation`, smaller enum catalogues.
+- **OCPI 2.3.0 surface** (`src/v230/`, partial). Enums widened for
+  V2X / ISO 15118-20 + DER (NEMA connector types,
+  `ISO_15118_20_PLUG_CHARGE` capability, …). **Payments module**
+  (new in 2.3.0) — `Payment` + `PaymentInfo` + payment method /
+  status enums. Locations, Sessions, Tokens for 2.3.0 ship today;
+  unchanged-shape modules (Tariffs, CDRs, Commands, ChargingProfiles,
+  HubClientInfo) lean on the 2.2.1 schemas — see the deferred note.
 - **Outbound HTTP client** (`src/client.lex`). Wraps `std.http`
   with the OCPI eight-header preset (`Authorization: Token …`,
   `X-Request-ID`, `X-Correlation-ID`, the four `OCPI-from/to-*`)
@@ -75,10 +87,6 @@ CPO↔eMSP side (HTTP/REST-based).
   handlers carry an `[io, time, sql]` upper bound so they can log
   via `io.print`, stamp `last_updated`, and persist via lex-orm's
   `[sql]`-flavoured helpers.
-- **OCPI 2.1.1 surface** (`src/v211/`). Same shape as the v2.2.1
-  surface, with the spec deltas baked in: flat Credentials (no
-  `roles[]`), `auth_id` instead of `CdrToken`, smaller enum
-  catalogues (no APP_USER, no RESERVATION, no PED_TERMINAL).
 
 ## Quickstart
 
@@ -143,7 +151,9 @@ src/
   route.lex               Pure handler registry + dispatch
   route_io.lex            Effectful registry (`[io, time, sql]` upper bound)
   client.lex              Outbound OCPI HTTP client (`[net]`)
-  v211/                   OCPI 2.1.1 surface (enums + Credentials + 5 schemas)
+  v211/                   OCPI 2.1.1 surface — full (enums + credentials +
+                                                 locations + sessions + tokens +
+                                                 cdrs + tariffs + commands)
   v221/
     enums.lex             OCPI 2.2.1 enums (LocationType, ConnectorType, ...)
     locations.lex         Location + EVSE + Connector schemas
@@ -154,6 +164,13 @@ src/
     commands.lex          Start/Stop/Reserve/Cancel/Unlock + response schemas
     chargingprofiles.lex  ChargingProfile + Set/Active/Result schemas
     hubclientinfo.lex     ClientInfo + ConnectionStatus enum
+  v230/                   OCPI 2.3.0 surface (enums widened for V2X / DER,
+                                              Payments NEW)
+    enums.lex             V2X / ISO 15118-20 plug-charge / NEMA connectors
+    locations.lex         Location + EVSE + Connector with v2.3 enum widening
+    sessions.lex          Session + CdrToken + ChargingPeriod
+    tokens.lex            Token + AuthorizationInfo
+    payments.lex          Payment + PaymentInfo + PaymentReference
 tools/
   gen.lex                 JSON Schema → ModelSchema codegen
 tests/
