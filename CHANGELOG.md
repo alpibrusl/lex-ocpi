@@ -55,6 +55,7 @@ align with `lex.toml`'s `version` field.
 - Effectful registry with `[io, time, sql]` upper bound for handlers that persist via lex-orm (`src/route_io.lex`)
 - Outbound HTTP client wrapping `std.http` with OCPI eight-header preset + envelope decode (`src/client.lex`). Also: `handshake(peer_versions_url, our_token, our_credentials)` — the two-step Versions → Credentials POST registration flow.
 - Pagination helpers (`src/pagination.lex`) — `from_query` / `clamp_limit` / `paginate` / `headers` covering the `?offset/?limit` + `X-Total-Count` + `Link: rel="next"` shape every OCPI list endpoint shares
+- Date-range filter helpers (`src/filters.lex`) — `from_query` / `apply` covering the `?date_from`/`?date_to` filter every OCPI list endpoint shares. Lexicographic ISO-8601 comparison via `str_lt` / `str_ge` since `std.str` doesn't yet expose a comparator.
 
 **Tooling:**
 
@@ -82,6 +83,7 @@ align with `lex.toml`'s `version` field.
 - `test_v230_schemas.lex` — 2.3.0 Connector (CHAOJI, NEMA_5_20), EVSE (ISO_15118_20_PLUG_CHARGE), Payment, PaymentInfo
 - `test_gen.lex` — codegen output shape (required/optional, enum→StrOneOf, length/min constraints, snake_case)
 - `test_pagination.lex` — query parsing, clamp_limit, slice math, has_more, X-Total-Count + Link headers
+- `test_filters.lex` — `?date_from`/`?date_to` parsing + lexicographic ISO-8601 filtering + drop-on-missing-last_updated defence
 - `test_property.lex` (runs under `[random]`) — schema/validator round-trip
 
 **Examples:**
