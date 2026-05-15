@@ -10,6 +10,10 @@ import "../src/v230/locations" as locs
 import "../src/v230/sessions"  as sess
 import "../src/v230/tokens"    as tokens
 import "../src/v230/payments"  as pay
+import "../src/v230/tariffs"   as tariffs
+import "../src/v230/commands"  as cmds
+import "../src/v230/chargingprofiles" as cp
+import "../src/v230/hubclientinfo"    as hub
 
 fn pass() -> Result[Unit, Str] { Ok(()) }
 fn fail(why :: Str) -> Result[Unit, Str] { Err(why) }
@@ -173,6 +177,76 @@ fn test_v230_payment_info_valid() -> Result[Unit, Str] {
     "valid 2.3.0 payment info")
 }
 
+# ---- Tariff (2.3.0) ---------------------------------------------
+
+fn test_v230_tariff_valid() -> Result[Unit, Str] {
+  let body := JObj([
+    ("country_code", JStr("NL")),
+    ("party_id",     JStr("TNM")),
+    ("id",           JStr("EUR-12345")),
+    ("currency",     JStr("EUR")),
+    ("elements", JList([
+      JObj([("price_components", JList([
+        JObj([("type", JStr("ENERGY")),
+              ("price", JFloat(0.30)),
+              ("step_size", JInt(1000))]),
+      ]))]),
+    ])),
+    ("last_updated", JStr("2026-05-15T10:00:00Z")),
+  ])
+  assert_ok(tariffs.validate_tariff(body), "valid 2.3.0 tariff")
+}
+
+# ---- Commands (2.3.0) -------------------------------------------
+
+fn test_v230_command_response_valid() -> Result[Unit, Str] {
+  let body := JObj([
+    ("result",  JStr("ACCEPTED")),
+    ("timeout", JInt(30)),
+  ])
+  assert_ok(cmds.validate_command_response(body),
+    "valid 2.3.0 command response")
+}
+
+fn test_v230_unlock_connector_valid() -> Result[Unit, Str] {
+  let body := JObj([
+    ("response_url", JStr("https://emsp.example.com/cb/x")),
+    ("location_id",  JStr("LOC1")),
+    ("evse_uid",     JStr("EVSE1")),
+    ("connector_id", JStr("1")),
+  ])
+  assert_ok(cmds.validate_unlock_connector(body),
+    "valid 2.3.0 unlock connector")
+}
+
+# ---- ChargingProfiles (2.3.0) -----------------------------------
+
+fn test_v230_charging_profile_valid() -> Result[Unit, Str] {
+  let body := JObj([
+    ("charging_rate_unit", JStr("W")),
+    ("charging_profile_period", JList([
+      JObj([("start_period", JInt(0)),
+            ("limit",        JFloat(11000.0))]),
+    ])),
+  ])
+  assert_ok(cp.validate_charging_profile(body),
+    "valid 2.3.0 charging profile")
+}
+
+# ---- HubClientInfo (2.3.0 — PTP role accepted) ------------------
+
+fn test_v230_client_info_ptp() -> Result[Unit, Str] {
+  let body := JObj([
+    ("country_code", JStr("US")),
+    ("party_id",     JStr("PTP")),
+    ("role",         JStr("PTP")),
+    ("status",       JStr("CONNECTED")),
+    ("last_updated", JStr("2026-05-15T10:00:00Z")),
+  ])
+  assert_ok(hub.validate_client_info(body),
+    "PTP role should be accepted in 2.3.0 HubClientInfo")
+}
+
 # ---- Suite + runner ---------------------------------------------
 
 fn suite() -> List[Result[Unit, Str]] {
@@ -185,6 +259,11 @@ fn suite() -> List[Result[Unit, Str]] {
     test_v230_payment_valid(),
     test_v230_payment_bad_status(),
     test_v230_payment_info_valid(),
+    test_v230_tariff_valid(),
+    test_v230_command_response_valid(),
+    test_v230_unlock_connector_valid(),
+    test_v230_charging_profile_valid(),
+    test_v230_client_info_ptp(),
   ]
 }
 

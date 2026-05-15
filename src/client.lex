@@ -167,3 +167,45 @@ fn delete_with_token(url :: Str, token_b64 :: Str) -> [net] Result[jv.Json, Clie
   let req := with_token(base_request("DELETE", url), token_b64)
   send(req)
 }
+
+# ---- Credentials handshake --------------------------------------
+#
+# The two-step OCPI registration:
+#
+#   1. GET <peer>/versions          → version list
+#   2. GET <peer>/<version>/        → endpoint catalogue
+#   3. POST <peer>/credentials      → swap our credentials for theirs
+#
+# We don't do retry / backoff — those belong at the caller's
+# discretion. Failures surface as `ClientError` so the caller can
+# inspect `OcpiError.r.status_code` to distinguish a `3002 unsupported
+# version` from a `2000 wrong token` etc.
+#
+# Returns the peer's `Credentials` JSON value on success.
+
+fn handshake(
+  peer_versions_url :: Str,
+  our_token         :: Str,
+  our_credentials   :: jv.Json
+) -> [net] Result[jv.Json, ClientError] {
+  match get_with_token(peer_versions_url, our_token) {
+    Err(e)  => Err(e),
+    Ok(_versions) => {
+      let creds_url := str.concat(
+        derive_credentials_url(peer_versions_url),
+        "/credentials")
+      post_json(creds_url, jv.stringify(our_credentials), our_token)
+    },
+  }
+}
+
+# Best-effort derivation: strip the trailing `/versions` from the
+# peer's discovery URL to recover the version-prefix. Real OCPI flows
+# pick a specific version from the `data` array first; this helper is
+# the bottom-of-the-stack case where you just want the "latest" path.
+fn derive_credentials_url(versions_url :: Str) -> Str {
+  match str.strip_suffix(versions_url, "/versions") {
+    None     => versions_url,
+    Some(p)  => p,
+  }
+}

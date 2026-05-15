@@ -70,13 +70,12 @@ CPO↔eMSP side (HTTP/REST-based).
   Credentials. The spec deltas vs 2.2.1 baked in: flat Credentials
   (no `roles[]`), bare `auth_id` (no `CdrToken`), no
   `CancelReservation`, smaller enum catalogues.
-- **OCPI 2.3.0 surface** (`src/v230/`, partial). Enums widened for
-  V2X / ISO 15118-20 + DER (NEMA connector types,
-  `ISO_15118_20_PLUG_CHARGE` capability, …). **Payments module**
-  (new in 2.3.0) — `Payment` + `PaymentInfo` + payment method /
-  status enums. Locations, Sessions, Tokens for 2.3.0 ship today;
-  unchanged-shape modules (Tariffs, CDRs, Commands, ChargingProfiles,
-  HubClientInfo) lean on the 2.2.1 schemas — see the deferred note.
+- **OCPI 2.3.0 surface** (`src/v230/`). Full 10-module parity:
+  enums widened for V2X / ISO 15118-20 + DER (NEMA connector types,
+  `ISO_15118_20_PLUG_CHARGE` capability), Locations / Sessions /
+  CDRs / Tokens / Tariffs / Commands / ChargingProfiles /
+  HubClientInfo (with PTP role), and the **new Payments module**
+  (`Payment` + `PaymentInfo` + payment method / status enums).
 - **Outbound HTTP client** (`src/client.lex`). Wraps `std.http`
   with the OCPI eight-header preset (`Authorization: Token …`,
   `X-Request-ID`, `X-Correlation-ID`, the four `OCPI-from/to-*`)
@@ -164,13 +163,18 @@ src/
     commands.lex          Start/Stop/Reserve/Cancel/Unlock + response schemas
     chargingprofiles.lex  ChargingProfile + Set/Active/Result schemas
     hubclientinfo.lex     ClientInfo + ConnectionStatus enum
-  v230/                   OCPI 2.3.0 surface (enums widened for V2X / DER,
-                                              Payments NEW)
+  v230/                   OCPI 2.3.0 surface — full (enums + 9 modules
+                                                 + Payments NEW)
     enums.lex             V2X / ISO 15118-20 plug-charge / NEMA connectors
     locations.lex         Location + EVSE + Connector with v2.3 enum widening
     sessions.lex          Session + CdrToken + ChargingPeriod
+    cdrs.lex              CDR + CdrLocation + SignedData
     tokens.lex            Token + AuthorizationInfo
-    payments.lex          Payment + PaymentInfo + PaymentReference
+    tariffs.lex           Tariff + TariffElement
+    commands.lex          Start/Stop/Reserve/Cancel/Unlock
+    chargingprofiles.lex  ChargingProfile + Set/Active/Result
+    hubclientinfo.lex     ClientInfo (with PTP role)
+    payments.lex          Payment + PaymentInfo + PaymentReference (NEW)
 tools/
   gen.lex                 JSON Schema → ModelSchema codegen
 tests/

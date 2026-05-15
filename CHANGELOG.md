@@ -30,11 +30,18 @@ align with `lex.toml`'s `version` field.
 - Credentials (**flat** — no `roles[]` array)
 - Enums (smaller catalogues: no `APP_USER` token type, no `RESERVATION` status, no `PED_TERMINAL` capability)
 
-**OCPI 2.3.0 surface (partial)** — enums + Locations + Sessions + Tokens + Payments:
+**OCPI 2.3.0 surface — FULL** (10/10 modules, matches ocpi-python):
 
-- Enums widened for V2X / DER (ISO 15118-20 plug-charge capabilities, NEMA 5_20 / 6_30 / 10_30 / 14_50 connector types)
+- Enums widened for V2X / DER (ISO 15118-20 plug-charge capabilities, NEMA 5_20 / 6_30 / 10_30 / 14_50 connector types, PaymentStatus, PaymentMethod)
 - **Payments module (new in 2.3.0)** — Payment + PaymentInfo + PaymentReference, with PaymentStatus (PENDING / SUCCEEDED / FAILED / REFUNDED / DISPUTED) and PaymentMethod enums
-- Wire shapes that didn't change in 2.3.0 continue to use the v2.2.1 schemas — see `src/v221/{cdrs,tariffs,commands,chargingprofiles,hubclientinfo}.lex`
+- Locations / EVSE / Connector / GeoLocation / Image / BusinessDetails / StatusSchedule (`src/v230/locations.lex`)
+- Sessions + CdrToken + CdrDimension + ChargingPeriod + Price (`src/v230/sessions.lex`)
+- CDRs + CdrLocation + SignedData / SignedValue (`src/v230/cdrs.lex`)
+- Tokens + EnergyContract + LocationReferences + AuthorizationInfo (`src/v230/tokens.lex`)
+- Tariffs + TariffElement + PriceComponent + TariffRestrictions (`src/v230/tariffs.lex`)
+- Commands + StartSession / StopSession / ReserveNow / CancelReservation / UnlockConnector + CommandResponse / CommandResult (`src/v230/commands.lex`)
+- ChargingProfiles + ChargingProfilePeriod + ActiveChargingProfile + SetChargingProfile + response/result (`src/v230/chargingprofiles.lex`)
+- HubClientInfo + ConnectionStatus enum, with PTP role added to the legal `role` set (`src/v230/hubclientinfo.lex`)
 
 **Version-agnostic core:**
 
@@ -46,7 +53,7 @@ align with `lex.toml`'s `version` field.
 - Credentials handshake (CredentialsRole + BusinessDetails + Image) (`src/credentials.lex`)
 - Pure handler registry + dispatch keyed by `(method, module)` (`src/route.lex`)
 - Effectful registry with `[io, time, sql]` upper bound for handlers that persist via lex-orm (`src/route_io.lex`)
-- Outbound HTTP client wrapping `std.http` with OCPI eight-header preset + envelope decode (`src/client.lex`)
+- Outbound HTTP client wrapping `std.http` with OCPI eight-header preset + envelope decode (`src/client.lex`). Also: `handshake(peer_versions_url, our_token, our_credentials)` — the two-step Versions → Credentials POST registration flow.
 - Pagination helpers (`src/pagination.lex`) — `from_query` / `clamp_limit` / `paginate` / `headers` covering the `?offset/?limit` + `X-Total-Count` + `Link: rel="next"` shape every OCPI list endpoint shares
 
 **Tooling:**
@@ -99,9 +106,9 @@ ecosystem repos:
 
 ### What's deferred
 
-- **OCPI 2.3.0 full surface.** Today: enums + Locations + Sessions + Tokens + Payments. Tariffs / CDRs / Commands / ChargingProfiles / HubClientInfo wire shapes are unchanged from 2.2.1; users can lean on the 2.2.1 modules for now. Tracker: post-v0.1.
-- **Outbound credentials handshake helper.** `src/client.lex` ships the low-level GET/PUT/POST/PATCH/DELETE primitives; a higher-level `client.handshake(versions_url, our_credentials)` that walks the two-step discovery + token exchange is open follow-up.
 - **TLS / mTLS transport setup.** OCPI runs over TLS in production; the example serves plain HTTP for simplicity. Real deployments terminate TLS at a reverse proxy.
+- **Stateful CSMS-style integration example.** `src/route_io.lex` ships the effectful registry; an end-to-end example threading `[io, time, sql]` handlers + lex-orm persistence is open follow-up.
+- **`std.url` / `std.uuid` polish.** Low-severity ergonomic gaps in lex-lang that lex-ocpi doesn't currently hit hard. May file as upstream issues if real consumers report them.
 
 ## [0.1.0] — to be tagged
 
