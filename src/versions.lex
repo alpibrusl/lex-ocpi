@@ -48,7 +48,12 @@ type Version = {
   url     :: Str,
 }
 
-fn version(v :: Str, url :: Str) -> Version {
+fn version(v :: Str, url :: Str) -> Version
+  examples {
+    version("2.2.1", "https://cpo.example.com/ocpi/2.2.1") =>
+      { version: "2.2.1", url: "https://cpo.example.com/ocpi/2.2.1" },
+  }
+{
   { version: v, url: url }
 }
 
@@ -76,11 +81,21 @@ fn endpoint(identifier :: Str, role :: Str, url :: Str) -> Endpoint {
   { identifier: identifier, role: role, url: url }
 }
 
-fn endpoint_sender(identifier :: Str, url :: Str) -> Endpoint {
+fn endpoint_sender(identifier :: Str, url :: Str) -> Endpoint
+  examples {
+    endpoint_sender("locations", "https://x/locations") =>
+      { identifier: "locations", role: "SENDER", url: "https://x/locations" },
+  }
+{
   endpoint(identifier, iface.sender(), url)
 }
 
-fn endpoint_receiver(identifier :: Str, url :: Str) -> Endpoint {
+fn endpoint_receiver(identifier :: Str, url :: Str) -> Endpoint
+  examples {
+    endpoint_receiver("credentials", "https://x/credentials") =>
+      { identifier: "credentials", role: "RECEIVER", url: "https://x/credentials" },
+  }
+{
   endpoint(identifier, iface.receiver(), url)
 }
 

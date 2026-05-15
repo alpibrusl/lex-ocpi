@@ -56,13 +56,27 @@ fn not_enough_information(description :: Str) -> OcpiError {
   err(status.not_enough_information(), description)
 }
 
-fn unknown_location(location_id :: Str) -> OcpiError {
+fn unknown_location(location_id :: Str) -> OcpiError
+  examples {
+    unknown_location("LOC9") =>
+      { code: 2003,
+        message: "Unknown Location: LOC9",
+        detail: JObj([("location_id", JStr("LOC9"))]) },
+  }
+{
   err_with(status.unknown_location(),
     str.concat("Unknown Location: ", location_id),
     JObj([("location_id", JStr(location_id))]))
 }
 
-fn unknown_token(token_uid :: Str) -> OcpiError {
+fn unknown_token(token_uid :: Str) -> OcpiError
+  examples {
+    unknown_token("RFID-A") =>
+      { code: 2004,
+        message: "Unknown Token: RFID-A",
+        detail: JObj([("uid", JStr("RFID-A"))]) },
+  }
+{
   err_with(status.unknown_token(),
     str.concat("Unknown Token: ", token_uid),
     JObj([("uid", JStr(token_uid))]))

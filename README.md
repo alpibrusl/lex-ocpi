@@ -49,9 +49,22 @@ CPO↔eMSP side (HTTP/REST-based).
   validator runs *before* the handler and surfaces every failing
   field at once as a `2001` envelope.
 - **OCPI 2.2.1 surface** (`src/v221/`). Full enums catalog
-  (`enums.lex`), and pydantic-style validators for the standard
-  module objects — Locations / EVSE / Connector, Sessions,
-  CDRs, Tokens, Tariffs, Commands.
+  (`enums.lex`), and pydantic-style validators for **every** standard
+  module object — Locations / EVSE / Connector, Sessions, CDRs,
+  Tokens, Tariffs, Commands, **ChargingProfiles** (`SetChargingProfile`,
+  `ActiveChargingProfile`, profile/response/result), **HubClientInfo**
+  (`ClientInfo`).
+- **JSON Schema → ModelSchema codegen** (`tools/gen.lex`). Reads an
+  OCA-published JSON Schema doc and emits a ready-to-paste `ModelSchema`
+  + `validate_<name>` wrapper. Bulk-import the rest of the OCPI surface
+  without hand-rolling every field. Coverage: primitives, arrays, enums,
+  string-length, int-minimum, required arrays.
+- **Property-based test driver** (`tests/test_property.lex`). Generates
+  schema-conforming payloads via `lex-schema/property` and asserts every
+  sample validates — the schema *is* the spec. Runs under `[random]`.
+- **Agent skill manifest** (`SKILL.md`). Discovery surface an LLM agent
+  reads to emit OCPI code against this library; every entry maps to a
+  Lex function with a stable `SigId`.
 - **One runnable example**: a minimal CPO server that walks the
   Versions discovery flow + serves a hard-coded Location.
 
@@ -124,16 +137,24 @@ src/
     tokens.lex            Token + AuthorizationInfo schemas
     tariffs.lex           Tariff + TariffElement + PriceComponent schemas
     commands.lex          Start/Stop/Reserve/Cancel/Unlock + response schemas
+    chargingprofiles.lex  ChargingProfile + Set/Active/Result schemas
+    hubclientinfo.lex     ClientInfo + ConnectionStatus enum
+tools/
+  gen.lex                 JSON Schema → ModelSchema codegen
 tests/
-  test_envelope.lex       Envelope encode / parse / round-trip
-  test_status.lex         Status code constants + predicates
-  test_headers.lex        Header from_map / to_map / token extraction
-  test_versions.lex       Versions discovery JSON shape
-  test_credentials.lex    Credentials validator
-  test_route.lex          Dispatcher + validator wiring
-  test_v221_schemas.lex   Per-object validator tests
+  test_envelope.lex                   Envelope encode / parse / round-trip
+  test_status.lex                     Status code constants + predicates
+  test_headers.lex                    Header from_map / to_map / token extraction
+  test_versions.lex                   Versions discovery JSON shape
+  test_credentials.lex                Credentials validator
+  test_route.lex                      Dispatcher + validator wiring
+  test_v221_schemas.lex               Per-object validator tests
+  test_v221_hubchargingprofiles.lex   ChargingProfiles + HubClientInfo validators
+  test_gen.lex                        JSON Schema → ModelSchema codegen
+  test_property.lex                   Property-based fuzz driver (random)
 examples/
-  cpo_v221.lex            Minimal OCPI 2.2.1 CPO over HTTP
+  cpo_v221.lex                        Minimal OCPI 2.2.1 CPO over HTTP
+SKILL.md                              Agent skill manifest
 ```
 
 ## Design
@@ -243,10 +264,12 @@ Examples that drive lex-web's HTTP server need `net,io,time`.
   a `src/v211/` directory with the per-version enums (smaller
   catalogue) and validators; 2.3.0 adds Payments + DER / V2X
   extensions to existing module surfaces. Both slot into the same
-  envelope / status / route layer.
-- **HubClientInfo / ChargingProfiles / Payments validators.**
-  Schemas for the three less-common modules are open follow-up;
-  the action-name strings live in `src/module_id.lex` already.
+  envelope / status / route layer. The codegen tool
+  (`tools/gen.lex`) should cut the cost dramatically — point it at
+  the OCA's published JSON Schemas and review the output.
+- **Payments validators** (OCPI 2.3.0-only). The module identifier
+  lives in `src/module_id.lex` already; the schemas land alongside
+  the `v230/` surface.
 - **Stateful effectful registry.** lex-ocpp ships a `route_io`
   variant with `[io, time, sql]` upper bound; lex-ocpi doesn't yet.
   Real CPOs persist locations / sessions / cdrs; a `route_io`

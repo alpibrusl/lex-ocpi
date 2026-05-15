@@ -45,7 +45,13 @@ type OcpiResponse = {
 # timestamp (for replayable test fixtures); the effectful path
 # in `route_io` calls `at` after stamping with `time.now_str()`.
 
-fn ok(data :: jv.Json, timestamp :: Str) -> OcpiResponse {
+fn ok(data :: jv.Json, timestamp :: Str) -> OcpiResponse
+  examples {
+    ok(JNull, "2026-05-15T10:00:00Z") =>
+      { data: JNull, status_code: 1000, status_message: "",
+        timestamp: "2026-05-15T10:00:00Z" },
+  }
+{
   at(data, 1000, "", timestamp)
 }
 
@@ -53,11 +59,23 @@ fn ok_list(items :: List[jv.Json], timestamp :: Str) -> OcpiResponse {
   at(JList(items), 1000, "", timestamp)
 }
 
-fn ok_empty(timestamp :: Str) -> OcpiResponse {
+fn ok_empty(timestamp :: Str) -> OcpiResponse
+  examples {
+    ok_empty("2026-05-15T10:00:00Z") =>
+      { data: JNull, status_code: 1000, status_message: "",
+        timestamp: "2026-05-15T10:00:00Z" },
+  }
+{
   at(JNull, 1000, "", timestamp)
 }
 
-fn fail(status_code :: Int, status_message :: Str, timestamp :: Str) -> OcpiResponse {
+fn fail(status_code :: Int, status_message :: Str, timestamp :: Str) -> OcpiResponse
+  examples {
+    fail(2003, "Unknown Location", "ts") =>
+      { data: JNull, status_code: 2003,
+        status_message: "Unknown Location", timestamp: "ts" },
+  }
+{
   at(JNull, status_code, status_message, timestamp)
 }
 
@@ -165,11 +183,23 @@ fn parse(raw :: Str) -> Result[OcpiResponse, EnvelopeError] {
 
 # ---- Predicates --------------------------------------------------
 
-fn is_success(r :: OcpiResponse) -> Bool {
+fn is_success(r :: OcpiResponse) -> Bool
+  examples {
+    is_success({ data: JNull, status_code: 1000,
+                 status_message: "", timestamp: "" }) => true,
+    is_success({ data: JNull, status_code: 2003,
+                 status_message: "x", timestamp: "" }) => false,
+  }
+{
   r.status_code >= 1000 and r.status_code < 2000
 }
 
-fn is_client_error(r :: OcpiResponse) -> Bool {
+fn is_client_error(r :: OcpiResponse) -> Bool
+  examples {
+    is_client_error({ data: JNull, status_code: 2001,
+                      status_message: "", timestamp: "" }) => true,
+  }
+{
   r.status_code >= 2000 and r.status_code < 3000
 }
 

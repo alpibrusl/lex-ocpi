@@ -231,14 +231,31 @@ fn response_from_handler(hr :: HandlerResult, timestamp :: Str) -> env.OcpiRespo
 
 # ---- Convenience builders for HandlerResult ----------------------
 
-fn ok(payload :: jv.Json) -> HandlerResult { HOk(payload) }
+fn ok(payload :: jv.Json) -> HandlerResult
+  examples {
+    ok(JNull) => HOk(JNull),
+  }
+{
+  HOk(payload)
+}
 
 fn ok_list(items :: List[jv.Json]) -> HandlerResult { HOkList(items) }
 
-fn ok_empty() -> HandlerResult { HOkEmpty }
+fn ok_empty() -> HandlerResult
+  examples {
+    ok_empty() => HOkEmpty,
+  }
+{
+  HOkEmpty
+}
 
 fn fail(oerr :: oe.OcpiError) -> HandlerResult { HErr(oerr) }
 
-fn fail_with(code :: Int, message :: Str) -> HandlerResult {
+fn fail_with(code :: Int, message :: Str) -> HandlerResult
+  examples {
+    fail_with(2003, "Unknown Location: LOC9") =>
+      HErr({ code: 2003, message: "Unknown Location: LOC9", detail: JNull }),
+  }
+{
   HErr(oe.err(code, message))
 }
