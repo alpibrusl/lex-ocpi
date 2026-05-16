@@ -8,6 +8,16 @@ align with `lex.toml`'s `version` field.
 
 ### Added
 
+**Real-time token authorization** (`src/authorize.lex` + per-version `src/v{211,221,230}/authorize.lex`) — closes issue [#3](https://github.com/alpibrusl/lex-ocpi/issues/3):
+
+- Shared `AuthorizationResult` ADT (`Allowed | Blocked | Expired | NoCredit | NotAllowed`) wrapping the validated `AuthorizationInfo` JSON. The decision is the variant tag; callers pull `token` / `location` / `authorization_reference` out of the payload as needed.
+- `auth.decode` / `auth.encode` — total JSON ↔ ADT mapping. Decoder is robust to unvalidated input (missing field, wrong type, unknown `allowed` string all surface as `Err`).
+- Per-version `build_authorize_url` reflecting the path-shape delta — v2.1.1 uses `/tokens/{uid}/authorize`, v2.2.1 + v2.3.0 use `/tokens/{country_code}/{party_id}/{uid}/authorize`.
+- Per-version `body_validator` accepting null / empty `{}` (spec's "any-location" form), otherwise delegating to `tokens.validate_location_references`.
+- Per-version `authorize_handler(authorize)` — receiver-side glue turning a pure `(token_uid, Option[location_refs]) -> AuthorizationResult` into a `route.Handler` that wraps the encoded result in the standard envelope.
+- Per-version `authorize_token(...)` — sender-side `[net]` helper that builds the URL + body, POSTs through `client.post_json`, and decodes the response.
+- `tests/test_authorize.lex` — 23 cases covering decoder happy paths (all 5 variants), negative cases (missing field, wrong type, unknown value), decode→encode round-trip, URL builders (all 3 versions), body builders, receiver-side handler (happy paths + missing-token-uid → 2001), wire-shape round-trip through the handler, and body_validator (4 cases).
+
 **OCPI 2.2.1 surface** — full module parity with `elumobility/ocpi-python`'s 2.2.1 surface:
 
 - Locations / EVSE / Connector + GeoLocation / Image / StatusSchedule (`src/v221/locations.lex`)

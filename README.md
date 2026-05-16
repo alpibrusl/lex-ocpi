@@ -82,6 +82,19 @@ CPO↔eMSP side (HTTP/REST-based).
   and the envelope-decode happy path. Returns `ClientError` —
   `HttpFailed` (transport), `BadEnvelope` (decode), `OcpiError`
   (2xxx/3xxx/4xxx envelope). Effect: `[net]`.
+- **Real-time token authorization** (`src/authorize.lex` +
+  `src/v{211,221,230}/authorize.lex`). Both sides of the
+  `POST /tokens/.../authorize` flow that runs before every charge
+  session start: a shared `AuthorizationResult` ADT
+  (`Allowed | Blocked | Expired | NoCredit | NotAllowed` wrapping
+  the validated `AuthorizationInfo`); per-version URL builders
+  reflecting the path-shape delta between v2.1.1 and v2.2.1+v2.3.0;
+  a `body_validator` that accepts null / empty `{}` per spec;
+  an `authorize_handler(authorize)` that lifts a pure
+  `(token_uid, Option[location_refs]) -> AuthorizationResult` into
+  a `route.Handler`; and a sender-side `authorize_token(...)` that
+  POSTs and decodes the response. Effect: pure for everything
+  except `authorize_token` (`[net]`).
 - **Effectful registry** (`src/route_io.lex`). Lex-ocpp parity:
   handlers carry an `[io, time, sql]` upper bound so they can log
   via `io.print`, stamp `last_updated`, and persist via lex-orm's
@@ -161,11 +174,13 @@ src/
   route.lex               Pure handler registry + dispatch
   route_io.lex            Effectful registry (`[io, time, sql]` upper bound)
   client.lex              Outbound OCPI HTTP client (`[net]`) + handshake helper
+  authorize.lex           Shared AuthorizationResult ADT + decode/encode
   pagination.lex          ?offset/?limit parsing + Page + Link/X-Total-Count headers
   filters.lex             ?date_from/?date_to ISO-8601 range filtering
   v211/                   OCPI 2.1.1 surface — full (enums + credentials +
                                                  locations + sessions + tokens +
-                                                 cdrs + tariffs + commands)
+                                                 cdrs + tariffs + commands +
+                                                 authorize)
   v221/
     enums.lex             OCPI 2.2.1 enums (LocationType, ConnectorType, ...)
     locations.lex         Location + EVSE + Connector schemas
@@ -176,6 +191,7 @@ src/
     commands.lex          Start/Stop/Reserve/Cancel/Unlock + response schemas
     chargingprofiles.lex  ChargingProfile + Set/Active/Result schemas
     hubclientinfo.lex     ClientInfo + ConnectionStatus enum
+    authorize.lex         Real-time POST /tokens/{cc}/{pid}/{uid}/authorize
   v230/                   OCPI 2.3.0 surface — full (enums + 9 modules
                                                  + Payments NEW)
     enums.lex             V2X / ISO 15118-20 plug-charge / NEMA connectors
@@ -188,6 +204,7 @@ src/
     chargingprofiles.lex  ChargingProfile + Set/Active/Result
     hubclientinfo.lex     ClientInfo (with PTP role)
     payments.lex          Payment + PaymentInfo + PaymentReference (NEW)
+    authorize.lex         Real-time POST /tokens/{cc}/{pid}/{uid}/authorize
 tools/
   gen.lex                 JSON Schema → ModelSchema codegen
 tests/
@@ -198,6 +215,7 @@ tests/
   test_credentials.lex                Credentials validator
   test_route.lex                      Dispatcher + validator wiring
   test_client.lex                     Outbound HTTP client header builders
+  test_authorize.lex                  Token-authorize ADT + handler + URL/body builders
   test_pagination.lex                 PageRequest parse + paginate + headers
   test_filters.lex                    DateRange parse + apply + str ordering
   test_v211_schemas.lex               v2.1.1 spec-delta validators
