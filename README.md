@@ -82,19 +82,22 @@ CPO↔eMSP side (HTTP/REST-based).
   and the envelope-decode happy path. Returns `ClientError` —
   `HttpFailed` (transport), `BadEnvelope` (decode), `OcpiError`
   (2xxx/3xxx/4xxx envelope). Effect: `[net]`.
-- **Commands dispatch** (`src/commands.lex`). Typed ADTs over the
-  spec's three Commands enums (`CommandType` — 5 variants;
-  `CommandResponseType` — 4; `CommandResultType` — 9), the
-  envelope records for sync `CommandResponse` and async
+- **Commands dispatch** (`src/commands.lex` + `src/commands_async.lex`).
+  Typed ADTs over the spec's three Commands enums (`CommandType` —
+  5 variants; `CommandResponseType` — 4; `CommandResultType` — 9),
+  the envelope records for sync `CommandResponse` and async
   `CommandResult`, and `command_handler(handle)` — receiver-side
   glue that lifts a pure `(body, response_url) -> CommandResponse`
   into a `route.Handler`. Sender-side `submit_command(...)`
   packages the POST. URL shape `{base}/commands/{TYPE}` is
   identical across all three OCPI versions so one helper covers
   all of them; per-version body schemas live in
-  `src/v{211,221,230}/commands.lex`. Sync half of issue
-  [#4](https://github.com/alpibrusl/lex-ocpi/issues/4); the async
-  in-flight / timeout / callback-POST runtime is slice 2.
+  `src/v{211,221,230}/commands.lex`. The **async runtime** in
+  `commands_async.lex` adds a `std.conc` in-flight registry,
+  `wait_for_result(...)` polling with deadline, the CPO-side
+  `callback_result(...)` POST, and `parse_result_post(...)` for
+  the eMSP webhook side. Closes
+  [#4](https://github.com/alpibrusl/lex-ocpi/issues/4).
 - **Real-time token authorization** (`src/authorize.lex` +
   `src/v{211,221,230}/authorize.lex`). Both sides of the
   `POST /tokens/.../authorize` flow that runs before every charge
@@ -188,6 +191,7 @@ src/
   route_io.lex            Effectful registry (`[io, time, sql]` upper bound)
   client.lex              Outbound OCPI HTTP client (`[net]`) + handshake helper
   commands.lex            Commands ADTs + receiver/sender dispatch (sync half)
+  commands_async.lex      In-flight actor + wait_for_result + callback-POST glue
   authorize.lex           Shared AuthorizationResult ADT + decode/encode
   pagination.lex          ?offset/?limit parsing + Page + Link/X-Total-Count headers
   filters.lex             ?date_from/?date_to ISO-8601 range filtering
@@ -231,6 +235,7 @@ tests/
   test_client.lex                     Outbound HTTP client header builders
   test_authorize.lex                  Token-authorize ADT + handler + URL/body builders
   test_commands_dispatch.lex          Commands ADTs + response/result envelopes + handler
+  test_commands_async.lex             In-flight actor + wait/timeout + webhook parser
   test_pagination.lex                 PageRequest parse + paginate + headers
   test_filters.lex                    DateRange parse + apply + str ordering
   test_v211_schemas.lex               v2.1.1 spec-delta validators
