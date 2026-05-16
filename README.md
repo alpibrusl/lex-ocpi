@@ -98,6 +98,17 @@ CPO↔eMSP side (HTTP/REST-based).
   `callback_result(...)` POST, and `parse_result_post(...)` for
   the eMSP webhook side. Closes
   [#4](https://github.com/alpibrusl/lex-ocpi/issues/4).
+- **Outbound push fanout** (`src/push.lex`). `PushKind` ADT —
+  8 variants covering the OCPI-side CPO→eMSP push catalogue
+  (Location PUT/PATCH, EVSE patch, Connector patch, Session
+  PUT/PATCH, CDR POST, Token PUT). Pure URL / method / body
+  helpers per kind, plus `push(policy, from_party, target, kind)`
+  for single-target send through `client.send_with_retry` and
+  `push_fanout(...)` for N targets via `list.map`. The retry policy
+  threads in unchanged — transient failures hit the classifier
+  from #8; a single target failing returns a per-target `Result`
+  list and does not short-circuit the others. Closes
+  [#5](https://github.com/alpibrusl/lex-ocpi/issues/5).
 - **Retry + backoff in the outbound client** (`src/client.lex`).
   `RetryPolicy` record (max attempts, initial / max delay, integer
   multiplier × 100, jitter, respect-Retry-After). `send_with_retry`
@@ -201,6 +212,7 @@ src/
   route.lex               Pure handler registry + dispatch
   route_io.lex            Effectful registry (`[io, time, sql]` upper bound)
   client.lex              Outbound OCPI HTTP client (`[net]`) + retry/backoff (`[net, time]`) + handshake
+  push.lex                CPO→eMSP state-change fanout — PushKind ADT + single/N-target push
   commands.lex            Commands ADTs + receiver/sender dispatch (sync half)
   commands_async.lex      In-flight actor + wait_for_result + callback-POST glue
   authorize.lex           Shared AuthorizationResult ADT + decode/encode
@@ -248,6 +260,7 @@ tests/
   test_commands_dispatch.lex          Commands ADTs + response/result envelopes + handler
   test_commands_async.lex             In-flight actor + wait/timeout + webhook parser
   test_retry.lex                      Retry classifier + backoff math + Retry-After parsing
+  test_push.lex                       Push fanout — PushKind method/URL/body + request shape
   test_pagination.lex                 PageRequest parse + paginate + headers
   test_filters.lex                    DateRange parse + apply + str ordering
   test_v211_schemas.lex               v2.1.1 spec-delta validators

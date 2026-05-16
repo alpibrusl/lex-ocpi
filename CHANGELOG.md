@@ -8,6 +8,18 @@ align with `lex.toml`'s `version` field.
 
 ### Added
 
+**Outbound push fanout** (`src/push.lex`) — closes issue [#5](https://github.com/alpibrusl/lex-ocpi/issues/5):
+
+- `PushTarget` record — `{ party, base_url, token }` — the per-eMSP coordinates we push to.
+- `PushKind` ADT covering the eight spec-shaped operations: `LocationPut` / `LocationPatch` / `EvsePatch` / `ConnectorPatch` / `SessionPut` / `SessionPatch` / `CdrPost` / `TokenPut`. Each variant carries the OCPI tenant tuple (`country_code` / `party_id`) plus the object id(s) needed for its URL plus a `body :: jv.Json` the caller assembles (full object for PUT, partial object for PATCH).
+- Pure helpers per kind — `push_method`, `push_url`, `push_body` — with URL builders (`location_url`, `evse_url`, `connector_url`, `session_url`, `token_url`) so callers can reach individual paths without re-assembling the variant.
+- `push(policy, from_party, target, kind)` — `[net, time]` single-target push. Builds the request via `client.with_token` + `client.with_party_routing` + `client.with_json_body`, sends through `client.send_with_retry` so transient failures retry per the supplied `RetryPolicy`.
+- `push_fanout(policy, from_party, targets, kind)` — `[net, time]` N-target fanout via `list.map` (NOT `flow.parallel_list`, which requires empty-effect closures; the spec reserves true threading for a future scheduler so there's no behaviour difference). Returns one `Result` per target in input order; one target failing does NOT short-circuit the others.
+- URL conventions are OCPI 2.2.1 / 2.3.0 — paths include the `{country_code}/{party_id}` multi-tenant segment. `CdrPost` is the one exception (POST `{base}/cdrs` with no tenant in the path; receiver applies its own `OCPI-from-*` headers for routing). v2.1.1's flatter paths can fork later if needed; the modern protocol shape is what production traffic runs on.
+- `tests/test_push.lex` — 30 cases: method per variant × 8, URL per variant × 8, body-transparency × 2, URL helpers × 5, `build_request` structural assertions × 6 (CDR + EVSE method/URL, Authorization header, OCPI-from + OCPI-to party tuples, JSON content-type + body present). Hooks-style change-detection (a repo observer firing `notify(...)`) is the doc-mentioned alternative design that doesn't ship in v1; callers wire `push(...)` explicitly into their handlers.
+
+Live-loop fanout tests (3 fake eMSPs, one returning 5xx → 2 OKs + 1 `HttpFailed` in stable order; `Retry-After: 1` honoured) are deferred to the conformance harness in issue [#10](https://github.com/alpibrusl/lex-ocpi/issues/10) — the retry path itself is exercised by `tests/test_retry.lex` already.
+
 **Retry + backoff in the outbound client** (`src/client.lex`) — closes issue [#8](https://github.com/alpibrusl/lex-ocpi/issues/8):
 
 - `RetryPolicy` record carrying `max_attempts` / `initial_delay_ms` / `max_delay_ms` / `multiplier_x100` (integer × 100; 200 = 2.0×; avoids `Float` math) / `jitter` / `respect_retry_after`. Two ready-made constructors: `default_retry_policy()` (5 attempts, 200ms base, 30s cap, 2× growth, jitter on, Retry-After honoured) and `no_retry_policy()` (one-shot, for tests and explicit-no-retry callers).
