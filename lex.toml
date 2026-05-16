@@ -1,0 +1,22 @@
+[package]
+name    = "lex-ocpi"
+version = "0.1.0"
+lex     = "0.9.4"
+
+# OCPI (Open Charge Point Interface) library for lex-lang.
+# Inspired by https://github.com/elumobility/ocpi-python — same shape
+# (typed module surfaces, pydantic-style validators, role-based
+# endpoint catalogues for CPO / eMSP / PTP), reworked for Lex's effect
+# system, variant ADTs, and pure-core / effect-edge split.
+#
+# Pairs with:
+#   lex-schema  — pydantic-style request validators (path = "../lex-schema")
+#   lex-web     — FastAPI-style HTTP framework (optional, used by some examples)
+#   lex-ocpp    — companion OCPP library (CP↔CSMS over WebSocket)
+#
+# v0.1 ships the OCPI 2.2.1 surface (Locations, Sessions, CDRs,
+# Tokens, Tariffs, Commands, Credentials, Versions). 2.1.1 and 2.3.0
+# slot in as sibling `v211/` / `v230/` directories — the wire
+# envelope, status codes, and routing layer are version-agnostic.
+[dependencies]
+lex-schema = { path = "../lex-schema" }

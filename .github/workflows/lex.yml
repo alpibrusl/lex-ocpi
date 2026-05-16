@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  ci:
+    name: lex ci --no-fmt
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      LEX_VERSION: v0.9.4
+      LEX_TARGET: x86_64-unknown-linux-gnu
+
+    steps:
+      - name: Checkout lex-ocpi
+        uses: actions/checkout@v4
+        with:
+          path: lex-ocpi
+
+      - name: Checkout lex-schema sibling (flat layout)
+        uses: actions/checkout@v4
+        with:
+          repository: alpibrusl/lex-schema
+          path: lex-schema
+
+      - name: Install pre-built lex
+        run: |
+          set -euo pipefail
+          ARCHIVE="lex-${LEX_VERSION}-${LEX_TARGET}.tar.gz"
+          curl -sSfL \
+            "https://github.com/alpibrusl/lex-lang/releases/download/${LEX_VERSION}/${ARCHIVE}" \
+            | tar -xz
+          sudo install -m 0755 "lex-${LEX_VERSION}-${LEX_TARGET}/lex" /usr/local/bin/lex
+          lex --version
+
+      - name: Resolve dependencies
+        working-directory: lex-ocpi
+        run: lex pkg install
+
+      - name: Run `lex ci --no-fmt`
+        working-directory: lex-ocpi
+        run: lex ci --no-fmt
+
+      - name: Property-test driver
+        working-directory: lex-ocpi
+        run: lex run --allow-effects random tests/test_property.lex run_all
+
+      - name: Smoke-test the codegen tool
+        working-directory: lex-ocpi
+        run: |
+          cat > /tmp/schema.json <<'EOF'
+          {
+            "title": "Heartbeat",
+            "type": "object",
+            "required": ["timestamp"],
+            "properties": {
+              "timestamp": { "type": "string", "minLength": 1, "maxLength": 32 }
+            }
+          }
+          EOF
+          JSON=$(jq -R -s . < /tmp/schema.json)
+          lex run tools/gen.lex generate "$JSON" | grep -q 'fn heartbeat_schema'
+
+      - name: Smoke-test the CPO example
+        working-directory: lex-ocpi
+        run: |
+          set -euo pipefail
+          lex run --allow-effects net,io,time examples/cpo_v221.lex main &
+          SERVER_PID=$!
+          # Poll until the server is up (max 5s).
+          for i in $(seq 1 50); do
+            if curl -sf http://localhost:9100/ocpi/versions > /tmp/versions.json; then
+              break
+            fi
+            sleep 0.1
+          done
+          grep -q '"status_code":1000' /tmp/versions.json
+          curl -sf http://localhost:9100/ocpi/2.2.1/locations/LOC1 \
+            | grep -q '"country_code":"NL"'
+          curl -sf http://localhost:9100/ocpi/2.2.1/locations/LOC9 \
+            | grep -q '"status_code":2003'
+          kill $SERVER_PID 2>/dev/null || true
