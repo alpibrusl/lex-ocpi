@@ -1,3 +1,4 @@
 .lex-store/
 target/
 *.log
+.cli/
