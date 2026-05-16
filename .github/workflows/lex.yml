@@ -27,6 +27,12 @@ jobs:
           repository: alpibrusl/lex-schema
           path: lex-schema
 
+      - name: Checkout lex-orm sibling (flat layout)
+        uses: actions/checkout@v4
+        with:
+          repository: alpibrusl/lex-orm
+          path: lex-orm
+
       - name: Install pre-built lex
         run: |
           set -euo pipefail
