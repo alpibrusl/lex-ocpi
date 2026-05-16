@@ -8,6 +8,17 @@ align with `lex.toml`'s `version` field.
 
 ### Added
 
+**Commands flow — sync half** (`src/commands.lex`) — slice 1 of issue [#4](https://github.com/alpibrusl/lex-ocpi/issues/4) (sync `CommandResponse`; async `CommandResult` callback runtime is the follow-up slice):
+
+- Three typed ADTs covering the spec's enums — `CommandType` (5 variants — StartSession / StopSession / ReserveNow / CancelReservation / UnlockConnector), `CommandResponseType` (4 — Accepted / Rejected / NotSupported / UnknownSession), `CommandResultType` (9 — Accepted / CanceledReservation / EvseOccupied / EvseInoperative / Failed / NotSupported / Rejected / Timeout / UnknownReservation).
+- Total `encode_*` / `decode_*` mappers for all three ADTs (Err on unknown wire strings, never panics).
+- `CommandResponse` record bundling `result :: CommandResponseType` + `timeout :: Option[Int]` (v2.1.1 omits, v2.2.1+ includes) + optional `messages :: List[DisplayText]`. Round-trip encode → decode is the identity.
+- `CommandResult` record (no `timeout`) for the async-callback side.
+- `response_url(body)` — pulls the spec-required `response_url` field out of any command body.
+- `command_handler(handle)` — receiver-side glue. Lifts a pure `(body, response_url) -> CommandResponse` into a `route.Handler`. URL-shape `{base}/commands/{TYPE}` is identical across 2.1.1 / 2.2.1 / 2.3.0 so one helper covers all three; the per-version body schemas already shipped in `src/v{211,221,230}/commands.lex` validate the inbound payload via `route.handler_with_schema` ahead of dispatch.
+- `submit_command(commands_base, cmd_type, body, token_b64)` — sender-side `[net]` helper. eMSP POSTs the command and decodes the typed `CommandResponse`. `response_url` lives inside `body` and is the eMSP's responsibility to set.
+- `tests/test_commands_dispatch.lex` — 31 cases: ADT round-trips for all 18 enum values, negative-decode cases, envelope round-trips for both sides, `response_url` extraction (3 cases), URL builder (3 command types), receiver-side handler (4 cases — accepted branch, rejected branch, missing `response_url` → 2001, captured-url forwarding).
+
 **Real-time token authorization** (`src/authorize.lex` + per-version `src/v{211,221,230}/authorize.lex`) — closes issue [#3](https://github.com/alpibrusl/lex-ocpi/issues/3):
 
 - Shared `AuthorizationResult` ADT (`Allowed | Blocked | Expired | NoCredit | NotAllowed`) wrapping the validated `AuthorizationInfo` JSON. The decision is the variant tag; callers pull `token` / `location` / `authorization_reference` out of the payload as needed.
