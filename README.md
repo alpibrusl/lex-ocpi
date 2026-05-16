@@ -98,6 +98,18 @@ CPO↔eMSP side (HTTP/REST-based).
   `callback_result(...)` POST, and `parse_result_post(...)` for
   the eMSP webhook side. Closes
   [#4](https://github.com/alpibrusl/lex-ocpi/issues/4).
+- **Conformance harness — assertions library**
+  (`src/conformance.lex`). Pure predicates that walk an
+  `OcpiResponse` / `OcpiHeaders` / response-header map and verify
+  the OCPI wire-shape contract. `check_envelope(r)` enforces the
+  spec's envelope MUSTs (status_code band, non-empty timestamp,
+  status_message for non-1xxx codes). `check_module_request_headers`
+  asserts the OCPI Authorization scheme + the 8-header tuple.
+  `check_response_echoes_request` enforces the X-Request-ID /
+  X-Correlation-ID round-trip. `check_pagination_headers` covers
+  X-Total-Count / X-Limit + Link header. Foundation layer of
+  issue [#10](https://github.com/alpibrusl/lex-ocpi/issues/10);
+  live-loop scenarios slot on top in a future PR.
 - **Idempotency cache** (`src/idempotency.lex`). `std.conc` actor
   backing an in-memory request cache keyed on
   `(method, path, X-Request-ID, OCPI-from-*)` per the spec.
@@ -226,6 +238,7 @@ src/
   client.lex              Outbound OCPI HTTP client (`[net]`) + retry/backoff (`[net, time]`) + handshake
   push.lex                CPO→eMSP state-change fanout — PushKind ADT + single/N-target push
   idempotency.lex         In-memory request cache — LRU + TTL + single-flight dispatch wrapper
+  conformance.lex         Spec-conformance assertions — envelope / headers / pagination
   commands.lex            Commands ADTs + receiver/sender dispatch (sync half)
   commands_async.lex      In-flight actor + wait_for_result + callback-POST glue
   authorize.lex           Shared AuthorizationResult ADT + decode/encode
@@ -275,6 +288,7 @@ tests/
   test_retry.lex                      Retry classifier + backoff math + Retry-After parsing
   test_push.lex                       Push fanout — PushKind method/URL/body + request shape
   test_idempotency.lex                Idempotency cache — handler/LRU/actor/dispatch wrapper
+  test_conformance.lex                Conformance harness — envelope/header/pagination assertions
   test_pagination.lex                 PageRequest parse + paginate + headers
   test_filters.lex                    DateRange parse + apply + str ordering
   test_v211_schemas.lex               v2.1.1 spec-delta validators

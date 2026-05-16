@@ -8,6 +8,20 @@ align with `lex.toml`'s `version` field.
 
 ### Added
 
+**Conformance harness — assertions library** (`src/conformance.lex`) — first slice of issue [#10](https://github.com/alpibrusl/lex-ocpi/issues/10):
+
+- `ConformanceError` ADT carrying structured failure detail per violation (`EnvelopeFieldEmpty(name)` / `StatusCodeOutOfBand(code)` / `StatusMessageMissing(code)` / `HeaderMissing(name)` / `HeaderMalformed({ name, why })` / `HeaderEchoMismatch({ name, sent, received })` / `PaginationFieldMissing(name)` / `PaginationFieldInvalid({ name, value, why })` / `DataShape(why)`). `render(e)` turns each variant into a one-line Str for log lines / test failures.
+- `classify(code) -> StatusBand` — exhaustive switch over the four spec bands (`Success` 1xxx / `ClientError` 2xxx / `ServerError` 3xxx / `HubError` 4xxx) plus `Unknown` for anything outside.
+- `check_envelope(r)` — pure predicate. Asserts `status_code` is in a known band, `timestamp` is non-empty, and `status_message` is non-empty for non-1xxx codes (the spec MUSTs). `check_envelope_all(r)` returns every violation in one pass (vs `check_envelope`'s first-failure return).
+- `check_module_request_headers(req)` — asserts `Authorization` starts with `"Token "` (the OCPI fixed scheme), `X-Request-ID` is present, and the from/to party tuples are non-empty + length-shaped (2-char country, 3-char party_id per ISO-3166 + spec). `check_config_request_headers(req)` is the lighter variant for `/versions` and `/credentials` endpoints that don't carry the party tuples.
+- `check_response_echoes_request(req, resp_headers)` — asserts the server echoed `X-Request-ID` and `X-Correlation-ID` per spec.
+- `check_pagination_headers(resp_headers)` — asserts `X-Total-Count` and `X-Limit` are present and parse as non-negative integers. `check_link_header_present(resp_headers)` checks the `Link` header carries a `rel="next"` marker (RFC 5988 — full grammar parsing is deferred; the common case is what every peer ships).
+- `assert_*` wrappers (`assert_envelope` / `assert_module_request_headers` / `assert_response_echoes_request` / `assert_pagination_headers`) return `Result[Unit, Str]` for one-line use in tests — `Str` is the rendered ConformanceError.
+
+`tests/test_conformance.lex` — 31 cases: `classify` × 6 (every band + Unknown high/low), `check_envelope` × 6 (success/client OK; missing-timestamp / unknown-band / message-missing-on-err / empty-message-on-success), `check_envelope_all` × 1 (collects multiple violations), `check_module_request_headers` × 6 (happy / missing-auth / wrong-scheme / missing-rid / missing-from-party / wrong-country-length), header echo × 3 (happy / missing-rid / mismatched-rid), pagination × 5 (happy / missing-total / non-integer-limit / negative-count / Link-rel-missing), `check_authorization` × 1, end-to-end flow × 3 (dispatched envelope passes conformance / fallback envelope passes conformance + is 2xxx / `assert_envelope` one-liner works).
+
+This is the **foundation** layer of the conformance harness. The live-loop scenarios listed in #5 / #7 / #8 (fake HTTP peer that 503s twice, 3-eMSP fanout with one failure, multi-thread idempotency race) need a mock transport that doesn't exist yet — those slot in on top of this library in a future PR. What ships here is everything that's checkable against the *pure* wire-shape of the envelope + header contract, which is most of what OCPI conformance actually means.
+
 **Idempotency cache** (`src/idempotency.lex`) — closes issue [#7](https://github.com/alpibrusl/lex-ocpi/issues/7):
 
 - `std.conc` actor backing an in-memory cache. State is `Map[Str, CacheSlot]` + an LRU list; the slot type is `InFlight | Completed({ response, expires_at_ns })` so the actor naturally distinguishes "someone's running this" from "cached" from "not present".
