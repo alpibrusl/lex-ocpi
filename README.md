@@ -14,7 +14,7 @@ transports, but the library itself only depends on lex-schema — the
 shipped example drives the OCPI dispatcher over `std.net.serve_fn`
 directly.
 
-Requires **lex-lang 0.9.3+**.
+Requires **lex-lang 0.9.4+**.
 
 Companion library: [lex-ocpp](https://github.com/alpibrusl/lex-ocpp) covers the
 CP↔CSMS side of EV charging (WebSocket-based). lex-ocpi covers the
@@ -86,6 +86,17 @@ CPO↔eMSP side (HTTP/REST-based).
   handlers carry an `[io, time, sql]` upper bound so they can log
   via `io.print`, stamp `last_updated`, and persist via lex-orm's
   `[sql]`-flavoured helpers.
+- **Pagination** (`src/pagination.lex`). `PageRequest { offset, limit }`
+  parsed from a query map with sane defaults (offset=0, limit=50) and
+  negative-clamping; `clamp_limit` for the spec-mandated server cap;
+  `paginate` returns a `Page { items, offset, limit, total }`; `headers`
+  emits the standard OCPI shape (`X-Total-Count`, `X-Limit`, and a
+  `Link: <url>; rel="next"` when more pages exist).
+- **Date-range filters** (`src/filters.lex`). `DateRange { date_from,
+  date_to }` parsed from a query map; `apply(items, range)` drops
+  items outside `[date_from, date_to)` via lexicographic ISO-8601
+  comparison — the other half of every OCPI list endpoint's contract
+  (`?date_from=` / `?date_to=` alongside `?offset=` / `?limit=`).
 
 ## Quickstart
 
@@ -135,7 +146,7 @@ curl -H "Authorization: Token cpo-secret" \
 ## Repository layout
 
 ```
-lex.toml                  package manifest (lex 0.9.3+)
+lex.toml                  package manifest (lex 0.9.4+)
 src/
   envelope.lex            OCPI response envelope (data/status_code/message/timestamp)
   status.lex              Status code constants + predicates + message map
@@ -149,7 +160,9 @@ src/
   credentials.lex         Credentials handshake objects + schema
   route.lex               Pure handler registry + dispatch
   route_io.lex            Effectful registry (`[io, time, sql]` upper bound)
-  client.lex              Outbound OCPI HTTP client (`[net]`)
+  client.lex              Outbound OCPI HTTP client (`[net]`) + handshake helper
+  pagination.lex          ?offset/?limit parsing + Page + Link/X-Total-Count headers
+  filters.lex             ?date_from/?date_to ISO-8601 range filtering
   v211/                   OCPI 2.1.1 surface — full (enums + credentials +
                                                  locations + sessions + tokens +
                                                  cdrs + tariffs + commands)
@@ -184,12 +197,20 @@ tests/
   test_versions.lex                   Versions discovery JSON shape
   test_credentials.lex                Credentials validator
   test_route.lex                      Dispatcher + validator wiring
-  test_v221_schemas.lex               Per-object validator tests
+  test_client.lex                     Outbound HTTP client header builders
+  test_pagination.lex                 PageRequest parse + paginate + headers
+  test_filters.lex                    DateRange parse + apply + str ordering
+  test_v211_schemas.lex               v2.1.1 spec-delta validators
+  test_v211_more.lex                  v2.1.1 Tariff / Command / CDR validators
+  test_v221_schemas.lex               v2.2.1 per-object validator tests
   test_v221_hubchargingprofiles.lex   ChargingProfiles + HubClientInfo validators
+  test_v230_schemas.lex               v2.3.0 validators (Payments, PTP role, ...)
   test_gen.lex                        JSON Schema → ModelSchema codegen
   test_property.lex                   Property-based fuzz driver (random)
 examples/
   cpo_v221.lex                        Minimal OCPI 2.2.1 CPO over HTTP
+  emsp_client.lex                     eMSP-side discovery + read using src/client.lex
+  export_schemas.lex                  Schema → TS / Pydantic / JSON Schema / OpenAPI
 SKILL.md                              Agent skill manifest
 ```
 
@@ -262,60 +283,66 @@ exact shape of some objects (CDR field renames, Token shape, the
 addition of Payments in 2.3.0). lex-ocpi:
 
 - shares `src/envelope.lex`, `src/status.lex`, `src/headers.lex`,
-  `src/route.lex`, `src/versions.lex`, `src/credentials.lex`
-  between all three versions,
-- exposes `src/v221/` today; `src/v211/` and `src/v230/` slot in
-  next to it,
-- exposes the per-version role catalog (`role.all_roles_v221()`
-  / `role.all_roles_v230()`) so a single peer can advertise the
-  right set per version.
+  `src/route.lex`, `src/versions.lex`, `src/credentials.lex`,
+  `src/pagination.lex`, `src/filters.lex`, `src/client.lex` between
+  all three versions,
+- exposes `src/v211/`, `src/v221/`, and `src/v230/` side by side,
+- exposes the per-version role catalog (`role.all_roles_v211()`
+  / `role.all_roles_v221()` / `role.all_roles_v230()`) so a single
+  peer can advertise the right set per version.
 
-v0.1 ships only 2.2.1 — the most widely deployed version. 2.3.0 and
-2.1.1 are tracked at:
-- [#1 — OCPI 2.3.0 module surface](https://github.com/alpibrusl/lex-ocpi/issues/1)
-- [#2 — OCPI 2.1.1 module surface](https://github.com/alpibrusl/lex-ocpi/issues/2)
+Module-parity matrix vs `elumobility/ocpi-python`:
+
+| Version | Modules | Parity |
+|---------|---------|--------|
+| 2.1.1   | enums + credentials + locations + sessions + tokens + cdrs + tariffs + commands | 8/8 |
+| 2.2.1   | + chargingprofiles + hubclientinfo | 10/10 |
+| 2.3.0   | + payments (new module), V2X / ISO 15118-20 enum widening, PTP role | 10/10 |
 
 ## Effect system
 
 The pure path is fully effect-free; the HTTP-transport entry points
 declare `[net, io, time]`:
 
-| Function                                  | Effects |
-|-------------------------------------------|---------|
-| `envelope.encode` / `envelope.parse`      | none |
-| `route.dispatch`                          | none (timestamp is an arg) |
-| `headers.from_map` / `headers.to_map`     | none |
-| `versions.detail_to_json`                 | none |
-| `credentials.validate_credentials_v221`   | none |
-| `v221/*.validate_*`                       | none |
-| `examples/cpo_v221.main`                  | `[net, io, time]` |
-| handler bodies (pure registry)            | none |
+| Function                                          | Effects |
+|---------------------------------------------------|---------|
+| `envelope.encode` / `envelope.parse`              | none |
+| `route.dispatch`                                  | none (timestamp is an arg) |
+| `headers.from_map` / `headers.to_map`             | none |
+| `versions.detail_to_json`                         | none |
+| `credentials.validate_credentials_v221`           | none |
+| `v211/*.validate_*` / `v221/*` / `v230/*`         | none |
+| `pagination.*` / `filters.*`                      | none |
+| handler bodies (pure registry)                    | none |
+| `route_io.dispatch`                               | `[io, time, sql]` |
+| `client.send` / `client.get_with_token` / ...     | `[net]` |
+| `client.handshake`                                | `[net]` |
+| `examples/cpo_v221.main`                          | `[net, io, time]` |
+| `examples/emsp_client.main`                       | `[net, io]` |
 
 Pure modules + pure tests run without any `--allow-effects` flag.
-Examples that drive lex-web's HTTP server need `net,io,time`.
+Examples that drive an HTTP server / client need `net,io,time`.
 
-## What's not in v0.1
+## Follow-ups
 
-- **OCPI 2.1.1 / 2.3.0.** v0.1 ships only 2.2.1. Adding 2.1.1 means
-  a `src/v211/` directory with the per-version enums (smaller
-  catalogue) and validators; 2.3.0 adds Payments + DER / V2X
-  extensions to existing module surfaces. Both slot into the same
-  envelope / status / route layer. The codegen tool
-  (`tools/gen.lex`) should cut the cost dramatically — point it at
-  the OCA's published JSON Schemas and review the output.
-- **Payments validators** (OCPI 2.3.0-only). The module identifier
-  lives in `src/module_id.lex` already; the schemas land alongside
-  the `v230/` surface.
-- **Stateful effectful registry.** lex-ocpp ships a `route_io`
-  variant with `[io, time, sql]` upper bound; lex-ocpi doesn't yet.
-  Real CPOs persist locations / sessions / cdrs; a `route_io`
-  wrapper that threads a `Db` handle would close that gap.
-- **Outbound HTTP client.** The library models the receiving side
-  (incoming requests, outgoing responses). Sending a Locations
-  patch to an eMSP or kicking off the credentials handshake from
-  the CPO side needs an HTTP client — lex-lang's `std.http` does
-  the work; a thin `lex-ocpi/client` module would package the
-  envelope decoding pattern, but isn't shipped yet.
+- **Combined OCPP + OCPI worked example.** A CPO that terminates
+  OCPP on one side and serves OCPI on the other — open at
+  [#3](https://github.com/alpibrusl/lex-ocpi/issues/3). The two
+  libraries compose today (lex-ocpp's `StartTransaction` handler
+  writes a Session via lex-ocpi); the example would just wire them
+  end-to-end.
+- **Upstream lex-lang gaps** surfaced while building this library
+  and tracked there: `?` / `try` sugar for `Result` / `Option`
+  early-return ([lex-lang#435](https://github.com/alpibrusl/lex-lang/issues/435)),
+  `std.net` middleware seam
+  ([lex-lang#436](https://github.com/alpibrusl/lex-lang/issues/436)),
+  match guard clauses
+  ([lex-lang#438](https://github.com/alpibrusl/lex-lang/issues/438)),
+  parametric record-alias coercion for `type Page[T] = { ... }`
+  ([lex-lang#439](https://github.com/alpibrusl/lex-lang/issues/439)).
+  None of these are blocking — they would let `pagination.lex`
+  drop a few workarounds and let `client.lex` shorten its
+  error-propagation chains.
 
 ## Pairing with lex-orm and lex-ocpp
 
