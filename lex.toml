@@ -11,6 +11,10 @@ lex     = "0.9.4"
 #
 # Pairs with:
 #   lex-schema  — pydantic-style request validators (path = "../lex-schema")
+#   lex-orm     — typed query builder + migration runner; consumes the
+#                 `ModelSchema` values exported by `src/v2{11,21,30}/*.lex`
+#                 to provide `Repo[T]` instances + migrations for every
+#                 OCPI module object (see issue #6).
 #   lex-web     — FastAPI-style HTTP framework (optional, used by some examples)
 #   lex-ocpp    — companion OCPP library (CP↔CSMS over WebSocket)
 #
@@ -20,3 +24,4 @@ lex     = "0.9.4"
 # envelope, status codes, and routing layer are version-agnostic.
 [dependencies]
 lex-schema = { path = "../lex-schema" }
+lex-orm    = { path = "../lex-orm" }
