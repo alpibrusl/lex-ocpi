@@ -98,6 +98,18 @@ CPO↔eMSP side (HTTP/REST-based).
   `callback_result(...)` POST, and `parse_result_post(...)` for
   the eMSP webhook side. Closes
   [#4](https://github.com/alpibrusl/lex-ocpi/issues/4).
+- **Idempotency cache** (`src/idempotency.lex`). `std.conc` actor
+  backing an in-memory request cache keyed on
+  `(method, path, X-Request-ID, OCPI-from-*)` per the spec.
+  `dispatch_with_cache(reg, cache, cfg, req, timestamp)` is the
+  drop-in wrapper around `route.dispatch` — first request runs
+  the handler and caches; duplicates return the cached response
+  without re-invoking; concurrent duplicates poll an `InFlight`
+  marker (single-flight) with a deadline fallback. LRU + TTL
+  bound the cache size and freshness; defaults match the OCPI
+  spec's 24h replay window. SQL-backed multi-replica variant is
+  a follow-up (wants `route_io.lex` + `std.sql`). Closes
+  [#7](https://github.com/alpibrusl/lex-ocpi/issues/7).
 - **Outbound push fanout** (`src/push.lex`). `PushKind` ADT —
   8 variants covering the OCPI-side CPO→eMSP push catalogue
   (Location PUT/PATCH, EVSE patch, Connector patch, Session
@@ -213,6 +225,7 @@ src/
   route_io.lex            Effectful registry (`[io, time, sql]` upper bound)
   client.lex              Outbound OCPI HTTP client (`[net]`) + retry/backoff (`[net, time]`) + handshake
   push.lex                CPO→eMSP state-change fanout — PushKind ADT + single/N-target push
+  idempotency.lex         In-memory request cache — LRU + TTL + single-flight dispatch wrapper
   commands.lex            Commands ADTs + receiver/sender dispatch (sync half)
   commands_async.lex      In-flight actor + wait_for_result + callback-POST glue
   authorize.lex           Shared AuthorizationResult ADT + decode/encode
@@ -261,6 +274,7 @@ tests/
   test_commands_async.lex             In-flight actor + wait/timeout + webhook parser
   test_retry.lex                      Retry classifier + backoff math + Retry-After parsing
   test_push.lex                       Push fanout — PushKind method/URL/body + request shape
+  test_idempotency.lex                Idempotency cache — handler/LRU/actor/dispatch wrapper
   test_pagination.lex                 PageRequest parse + paginate + headers
   test_filters.lex                    DateRange parse + apply + str ordering
   test_v211_schemas.lex               v2.1.1 spec-delta validators

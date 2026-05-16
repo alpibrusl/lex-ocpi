@@ -8,6 +8,20 @@ align with `lex.toml`'s `version` field.
 
 ### Added
 
+**Idempotency cache** (`src/idempotency.lex`) — closes issue [#7](https://github.com/alpibrusl/lex-ocpi/issues/7):
+
+- `std.conc` actor backing an in-memory cache. State is `Map[Str, CacheSlot]` + an LRU list; the slot type is `InFlight | Completed({ response, expires_at_ns })` so the actor naturally distinguishes "someone's running this" from "cached" from "not present".
+- Message ADT `TryReserve | Store | Forget | Lookup | Purge` with a parallel reply ADT `Run | Wait | Hit | Miss | Ack`. `cache_handler` is **pure** — testable without `[concurrent]`.
+- `CacheKey` keyed on `(method, path, X-Request-ID, OCPI-from-country-code, OCPI-from-party-id)` per the spec. `key_from_request(req)` returns `None` when `X-Request-ID` is empty (uncacheable). `key_str` renders with `|` separators — OCPI wire shapes don't carry pipes in these fields, so collisions don't happen in practice; documented as a known limitation.
+- `dispatch_with_cache(reg, cache, cfg, req, timestamp)` — `[concurrent, time]` drop-in for `route.dispatch`. First request with a given key runs the handler and stores the response with TTL; duplicate requests get the cached response without re-invoking. Concurrent duplicates poll the `InFlight` marker until completion or `max_wait_ms` elapses; on timeout the waiter clears the marker and runs the handler itself (avoiding deadlock if the original caller died).
+- LRU eviction — capacity-bound; the least-recently-used entry is dropped when a new one would exceed `capacity`. Touching an entry via `TryReserve` or `Lookup` promotes it. `capacity <= 0` is treated as "unbounded".
+- TTL expiry — entries drop after `ttl_ms`; the next request with that key re-runs the handler. `default_config()` ships 24h TTL, 50ms poll, 5s max-wait — the 24h matches OCPI's guidance for replay windows. `Purge(now_ns)` manually drops expired entries (in-flight slots are kept; they have no expiry).
+- `tests/test_idempotency.lex` — 21 cases: key derivation × 2 (happy + missing-request-id), pure handler × 8 (every TryReserve / Lookup / Forget branch), Purge × 1, LRU × 3 (oldest evicted, touch promotes, capacity-0 unbounded), actor end-to-end × 3 (basic flow, Forget releases, Lookup pending), `dispatch_with_cache` × 4 (dedups same key, distinct keys both run, no-request-id bypasses cache, InFlight + timeout falls back to running the handler).
+
+The genuine multi-thread race (two `dispatch_with_cache` calls from separate threads landing on the same key simultaneously) needs OS-thread scheduling that lex 0.9.3 doesn't expose; the **single-flight semantics** are exercised through the InFlight + timeout fallback path. The SQL-backed variant for multi-replica deployments (`with_idempotency_cache_sql(reg, db)` per the issue spec) wants `route_io.lex` + `std.sql` and is filed as a follow-up.
+
+A small ergonomics note: closure factories like `fn handler_returning(code :: Int) -> (req) -> HandlerResult { fn (_req) -> ... { ... code ... } }` don't capture function parameters cleanly in 0.9.3 — invoking such a factory twice with different arguments returns closures that both capture the FIRST argument. The test suite documents the gotcha and uses distinct named handlers (`handler_1000` / `handler_2000`) as a workaround.
+
 **Outbound push fanout** (`src/push.lex`) — closes issue [#5](https://github.com/alpibrusl/lex-ocpi/issues/5):
 
 - `PushTarget` record — `{ party, base_url, token }` — the per-eMSP coordinates we push to.
