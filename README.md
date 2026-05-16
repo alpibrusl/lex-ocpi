@@ -98,6 +98,17 @@ CPO↔eMSP side (HTTP/REST-based).
   `callback_result(...)` POST, and `parse_result_post(...)` for
   the eMSP webhook side. Closes
   [#4](https://github.com/alpibrusl/lex-ocpi/issues/4).
+- **Retry + backoff in the outbound client** (`src/client.lex`).
+  `RetryPolicy` record (max attempts, initial / max delay, integer
+  multiplier × 100, jitter, respect-Retry-After). `send_with_retry`
+  is the `[net, time]` loop; `send_with_events` adds an `[io]`
+  observer that fires on every planned retry and the final give-up.
+  Classifier `is_retryable(err)` covers HTTP 408 / 429 / 5xx +
+  transport failures; 4xx-other / malformed-envelope /
+  OCPI-logical-errors don't retry. Honours `Retry-After: <seconds>`
+  on 429 / 503 (HTTP-date form unsupported — integer-seconds is
+  what the OCPI ecosystem actually ships). Closes
+  [#8](https://github.com/alpibrusl/lex-ocpi/issues/8).
 - **Real-time token authorization** (`src/authorize.lex` +
   `src/v{211,221,230}/authorize.lex`). Both sides of the
   `POST /tokens/.../authorize` flow that runs before every charge
@@ -189,7 +200,7 @@ src/
   credentials.lex         Credentials handshake objects + schema
   route.lex               Pure handler registry + dispatch
   route_io.lex            Effectful registry (`[io, time, sql]` upper bound)
-  client.lex              Outbound OCPI HTTP client (`[net]`) + handshake helper
+  client.lex              Outbound OCPI HTTP client (`[net]`) + retry/backoff (`[net, time]`) + handshake
   commands.lex            Commands ADTs + receiver/sender dispatch (sync half)
   commands_async.lex      In-flight actor + wait_for_result + callback-POST glue
   authorize.lex           Shared AuthorizationResult ADT + decode/encode
@@ -236,6 +247,7 @@ tests/
   test_authorize.lex                  Token-authorize ADT + handler + URL/body builders
   test_commands_dispatch.lex          Commands ADTs + response/result envelopes + handler
   test_commands_async.lex             In-flight actor + wait/timeout + webhook parser
+  test_retry.lex                      Retry classifier + backoff math + Retry-After parsing
   test_pagination.lex                 PageRequest parse + paginate + headers
   test_filters.lex                    DateRange parse + apply + str ordering
   test_v211_schemas.lex               v2.1.1 spec-delta validators

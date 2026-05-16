@@ -8,6 +8,19 @@ align with `lex.toml`'s `version` field.
 
 ### Added
 
+**Retry + backoff in the outbound client** (`src/client.lex`) — closes issue [#8](https://github.com/alpibrusl/lex-ocpi/issues/8):
+
+- `RetryPolicy` record carrying `max_attempts` / `initial_delay_ms` / `max_delay_ms` / `multiplier_x100` (integer × 100; 200 = 2.0×; avoids `Float` math) / `jitter` / `respect_retry_after`. Two ready-made constructors: `default_retry_policy()` (5 attempts, 200ms base, 30s cap, 2× growth, jitter on, Retry-After honoured) and `no_retry_policy()` (one-shot, for tests and explicit-no-retry callers).
+- New `HttpStatus({ code :: Int, retry_after_ms :: Option[Int] })` variant on `ClientError`. `send` now inspects `resp.status` from `std.http`: 2xx decodes the OCPI envelope (current behaviour), non-2xx surfaces as `HttpStatus` so the retry classifier can see the HTTP code. `BadEnvelope` and `OcpiError` remain reserved for actual envelope-shape / OCPI-logical failures.
+- `is_retryable(err)` classifier — pure, total: transport failures retry; HTTP 408 / 429 / 5xx retry; HTTP 4xx (other) gives up; `BadEnvelope` and `OcpiError` give up (the envelope shape and logical-error responses won't change on retry).
+- `parse_retry_after_ms(headers)` — integer-seconds form only (`Retry-After: 2` → `Some(2000)`). HTTP-date form is documented as unsupported and returns `None`; the OCPI ecosystem ships the integer form in practice.
+- `compute_backoff_ms(attempt, policy, hint)` — composes Retry-After honour + exponential growth + jitter + max-delay clamp. Pure exponential math lives in `exp_backoff_ms` so it's testable without `[time]`; jitter uses `time.mono_ns()` as the entropy source (avoids needing `[rand]`, which is a stub on the current runtime).
+- `send_with_retry(req, policy)` — `[net, time]` recursive retry loop. Each iteration: send, on Ok return, on non-retryable Err return immediately, on retryable Err sleep `compute_backoff_ms(...)` and recur until `max_attempts`. Termination bounded by the attempt counter; per-sleep clamped by `time.sleep_ms`'s 60_000 cap.
+- `send_with_events(req, policy, observer)` — `[net, time, io]` variant. Observer fires `Attempt({ n, delay_ms, reason })` once per planned retry and `GaveUp({ attempts, last_error })` once at the give-up moment. Successful responses emit no events.
+- `tests/test_retry.lex` — 35 cases: classifier × 8 (every error variant, every spec-listed status code), status-code edges × 5 (500 / 599 / 600 boundary / 499 boundary / 200), Retry-After parser × 6 (integer / zero / missing / negative / garbage / HTTP-date documented as unsupported), `retry_after_hint` × 4 (honoured on 503 + 429, suppressed on 500 + transport), backoff math × 6 (default-policy attempts 1/2/3, max-clamp at attempt 10, flat policy with multiplier=100, 1.5× growth chain), `compute_backoff_ms` × 5 (Retry-After honoured + capped + ignored-when-off, no-hint exponential, jitter-in-range), `reason_of` × 4, policy constructors × 2.
+
+Live-loop tests (a fake HTTP target that 503s twice then 200s, or a peer that returns `Retry-After: 1`) are deferred to the conformance harness in issue [#10](https://github.com/alpibrusl/lex-ocpi/issues/10) — everything the retry loop does is exercised here through the pure helpers it delegates to.
+
 **Commands flow — async runtime** (`src/commands_async.lex`) — slice 2 of issue [#4](https://github.com/alpibrusl/lex-ocpi/issues/4); together with slice 1 closes the issue:
 
 - `std.conc` actor backing an in-flight registry keyed on response-id. State is `Map[Str, Option[CommandResult]]` so the actor distinguishes "never registered" (missing) from "registered, pending" (`Some(None)`) from "completed" (`Some(Some(r))`). Message ADT — `Register | Complete | Forget | Lookup` — and a parallel reply ADT — `AckRegistered | AckCompleted | AckForgotten | LookupPending | LookupReady | LookupUnknown` — keep the handler total.
