@@ -98,6 +98,22 @@ CPO↔eMSP side (HTTP/REST-based).
   `callback_result(...)` POST, and `parse_result_post(...)` for
   the eMSP webhook side. Closes
   [#4](https://github.com/alpibrusl/lex-ocpi/issues/4).
+- **Hub role** (`src/hub.lex`). The routing-table + forward
+  + ClientInfo-broadcast trifecta from the OCPI hub model.
+  `RoutingTable` keyed on `(country_code, party_id)` is a pure
+  `Map[Str, PushTarget]` with CRUD helpers; `forward(policy,
+  table, from_party, to_party, method, path, body)` carries
+  `[net, time]` and re-issues the request to the destination
+  peer via `client.send_with_retry` (transient failures inherit
+  #8's retry policy). Loop prevention refuses `from == to`
+  before touching the network; unknown receivers fail-fast with
+  `UnknownReceiver`. `RoutingError` variants map onto the spec's
+  4xxx hub-error codes (4002 unknown_receiver / 4001 loop / 4004
+  connection_problem) so the hub can answer the original sender
+  with a well-shaped OCPI envelope. `broadcast_clientinfo`
+  fanouts a `PUT /clientinfo/{cc}/{pid}/{uid}` to every peer
+  except the subject. Closes
+  [#9](https://github.com/alpibrusl/lex-ocpi/issues/9).
 - **Conformance harness — assertions library**
   (`src/conformance.lex`). Pure predicates that walk an
   `OcpiResponse` / `OcpiHeaders` / response-header map and verify
@@ -239,6 +255,7 @@ src/
   push.lex                CPO→eMSP state-change fanout — PushKind ADT + single/N-target push
   idempotency.lex         In-memory request cache — LRU + TTL + single-flight dispatch wrapper
   conformance.lex         Spec-conformance assertions — envelope / headers / pagination
+  hub.lex                 Hub role — routing table + forward + ClientInfo broadcast
   commands.lex            Commands ADTs + receiver/sender dispatch (sync half)
   commands_async.lex      In-flight actor + wait_for_result + callback-POST glue
   authorize.lex           Shared AuthorizationResult ADT + decode/encode
@@ -289,6 +306,7 @@ tests/
   test_push.lex                       Push fanout — PushKind method/URL/body + request shape
   test_idempotency.lex                Idempotency cache — handler/LRU/actor/dispatch wrapper
   test_conformance.lex                Conformance harness — envelope/header/pagination assertions
+  test_hub.lex                        Hub routing table + forward + error mapping
   test_pagination.lex                 PageRequest parse + paginate + headers
   test_filters.lex                    DateRange parse + apply + str ordering
   test_v211_schemas.lex               v2.1.1 spec-delta validators

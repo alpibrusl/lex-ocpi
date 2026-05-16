@@ -8,6 +8,18 @@ align with `lex.toml`'s `version` field.
 
 ### Added
 
+**Hub role — routing table + forward + ClientInfo broadcast** (`src/hub.lex`) — closes issue [#9](https://github.com/alpibrusl/lex-ocpi/issues/9):
+
+- `RoutingTable` — pure `Map[Str, push.PushTarget]` keyed on `"{country_code}|{party_id}"`. CRUD helpers (`empty_table` / `add_peer` / `remove_peer` / `lookup` / `peer_count` / `all_parties`) — all pure folds. `key_of(party)` is the canonical key renderer; add overwrites, remove of an unknown party is a no-op.
+- `RoutingError` ADT — `UnknownReceiver(party)` / `LoopDetected({ from, to })` / `ForwardFailed(client.ClientError)`. `error_to_status_code(e)` maps each variant onto the spec's 4xxx hub-error catalogue (`unknown_receiver` → 4002, `LoopDetected` → 4001, `ForwardFailed` → 4004 — using the constants from `src/status.lex`); `error_to_message(e)` renders for logging.
+- `forward(policy, table, from_party, to_party, method, module_path, body)` — `[net, time]` generic OCPI forward. Loop check (`from == to` → `LoopDetected` before touching the network), routing lookup (`to` not in table → `UnknownReceiver` ditto), then composes the outbound request via `client.with_token` + `client.with_party_routing` + `client.with_json_body` and sends through `client.send_with_retry`. Transient downstream failures retry per the policy passed in (inherits #8's classifier).
+- `build_forward_request(target, from_party, method, module_path, body)` — the pure request-shape builder. Exposed so callers (and the conformance harness in #10) can assert on URL composition, party headers, and Authorization without spinning up a transport.
+- `broadcast_clientinfo(policy, table, hub_party, subject_party, subject_uid, client_info)` — `[net, time]` PUT-fan to every registered peer EXCEPT the subject (who's the one whose state changed and already knows). Uses `list.map` (not `flow.parallel_list` — same reasoning as `push.push_fanout`: parallel_list wants empty-effect closures and the runtime is sequential under the hood today). Returns one `(party, Result)` pair per recipient so callers can log per-target failures.
+- `clientinfo_path(party, uid)` — pure spec-shape `/clientinfo/{cc}/{pid}/{uid}` builder.
+- `tests/test_hub.lex` — 23 cases: routing table CRUD × 9 (empty-count, single-add, three-add, lookup hit/miss, remove, remove-unknown no-op, add-overwrites, all_parties enumeration), key + path helpers × 2, request-shape × 6 (method/URL, Authorization scheme + per-peer token, from-party preserved, to-party set from target, GET has no body, PUT has JSON body + content-type), forward pre-network paths × 2 (loop refused, unknown receiver), error-code mapping × 4 (each `RoutingError` variant → 4xxx + sanity check against `status.lex`).
+
+Live-loop forward tests (peer responding 4002 / hub-side `forward` going all the way through `client.send`, ClientInfo broadcast across 3 peers with one returning 5xx) need the mock transport that's the follow-up slice of #10; they slot in on top of this module without changes.
+
 **Conformance harness — assertions library** (`src/conformance.lex`) — first slice of issue [#10](https://github.com/alpibrusl/lex-ocpi/issues/10):
 
 - `ConformanceError` ADT carrying structured failure detail per violation (`EnvelopeFieldEmpty(name)` / `StatusCodeOutOfBand(code)` / `StatusMessageMissing(code)` / `HeaderMissing(name)` / `HeaderMalformed({ name, why })` / `HeaderEchoMismatch({ name, sent, received })` / `PaginationFieldMissing(name)` / `PaginationFieldInvalid({ name, value, why })` / `DataShape(why)`). `render(e)` turns each variant into a one-line Str for log lines / test failures.
