@@ -3,23 +3,25 @@
 # Counterpart to `cpo_harness.lex`. Drives an eMSP under test
 # through a v2.2.1 subset:
 #
-#   - Versions discovery (same shape as CPO side)
-#   - POST /tokens/{cc}/{pid}/{uid}/authorize (the inbound
-#     authorize call from a CPO; harness pretends to be the CPO)
-#   - GET /tariffs (eMSPs cache tariffs from CPOs and re-serve them)
+#   1. GET /ocpi/versions returns 1000 envelope
+#   2. GET /ocpi/2.2.1 returns 1000 envelope (version detail)
+#   3. POST /tokens/NL/EXM/RFID-A/authorize returns ALLOWED
+#   4. POST /tokens/NL/EXM/RFID-C/authorize returns BLOCKED
+#   5. POST /tokens/NL/EXM/UNKNOWN/authorize returns NOT_ALLOWED
+#   6. GET /ocpi/2.2.1/tariffs returns 1000 envelope
 #
-# `examples/` does not ship a fake eMSP yet, so the live CI loop
-# is parked: cases marked `CaseSkip` until an `examples/emsp_v221.lex`
-# lands. The structure is set up so each concrete eMSP case is a
-# one-line addition to `suite()` once there's a real peer to hit.
+# Targets the fake eMSP in `examples/emsp_v221.lex` by default —
+# the CI loop spawns that server on port 9101 before invoking the
+# harness.
 #
-# Run (against a real eMSP at OCPI_TARGET):
-#
-#   lex run --allow-effects net,io conformance/emsp_harness.lex main
+# Run:
+#   lex run --allow-effects net,io,time conformance/emsp_harness.lex main
 
 import "std.io"   as io
 import "std.list" as list
 import "std.str"  as str
+
+import "lex-schema/json_value" as jv
 
 import "../src/client" as client
 
@@ -39,24 +41,82 @@ fn case_versions_returns_ok() -> cc.Case {
   }
 }
 
-fn case_authorize_known_token_returns_allowed() -> cc.Case {
-  # Placeholder — needs a fake eMSP fixture that responds to
-  # POST /tokens/NL/EXM/{uid}/authorize with an AuthorizationInfo
-  # envelope. Slot in once `examples/emsp_v221.lex` ships.
+fn case_version_detail_returns_ok() -> cc.Case {
   {
-    name: "POST /tokens/{uid}/authorize returns AuthorizationInfo",
-    run: fn (_cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
-      CaseSkip("needs examples/emsp_v221.lex fake eMSP")
+    name: "GET /ocpi/2.2.1 returns 1000 envelope (version detail)",
+    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+      match client.get_with_token(cc.version_detail_url(cfg), cfg.token) {
+        Ok(_)  => CasePass,
+        Err(e) => CaseFail(cc.client_error_short(e)),
+      }
+    },
+  }
+}
+
+# ---- Authorize cases -----------------------------------------
+
+fn authorize_url(cfg :: cc.TargetConfig, uid :: Str) -> Str {
+  str.concat(cc.module_url(cfg, "tokens"),
+    str.concat("/NL/EXM/",
+      str.concat(uid, "/authorize")))
+}
+
+fn check_allowed_value(data :: jv.Json, want :: Str) -> cc.CaseResult {
+  match jv.get_field(data, "allowed") {
+    None    => CaseFail("response data has no `allowed` field"),
+    Some(v) => match jv.as_str(v) {
+      None    => CaseFail("`allowed` is not a string"),
+      Some(s) => if s == want { CasePass }
+                 else { CaseFail(str.concat("allowed=", str.concat(s,
+                          str.concat(", want ", want)))) },
+    },
+  }
+}
+
+fn case_authorize_allowed() -> cc.Case {
+  {
+    name: "POST /tokens/NL/EXM/RFID-A/authorize returns ALLOWED",
+    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+      match client.post_json(authorize_url(cfg, "RFID-A"), "{}", cfg.token) {
+        Err(e)   => CaseFail(cc.client_error_short(e)),
+        Ok(data) => check_allowed_value(data, "ALLOWED"),
+      }
+    },
+  }
+}
+
+fn case_authorize_blocked() -> cc.Case {
+  {
+    name: "POST /tokens/NL/EXM/RFID-C/authorize returns BLOCKED",
+    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+      match client.post_json(authorize_url(cfg, "RFID-C"), "{}", cfg.token) {
+        Err(e)   => CaseFail(cc.client_error_short(e)),
+        Ok(data) => check_allowed_value(data, "BLOCKED"),
+      }
+    },
+  }
+}
+
+fn case_authorize_not_allowed() -> cc.Case {
+  {
+    name: "POST /tokens/NL/EXM/UNKNOWN/authorize returns NOT_ALLOWED",
+    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+      match client.post_json(authorize_url(cfg, "UNKNOWN"), "{}", cfg.token) {
+        Err(e)   => CaseFail(cc.client_error_short(e)),
+        Ok(data) => check_allowed_value(data, "NOT_ALLOWED"),
+      }
     },
   }
 }
 
 fn case_tariffs_list_returns_ok() -> cc.Case {
-  # Placeholder — same reasoning as authorize.
   {
     name: "GET /ocpi/2.2.1/tariffs returns 1000 envelope",
-    run: fn (_cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
-      CaseSkip("needs examples/emsp_v221.lex fake eMSP")
+    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+      match client.get_with_token(cc.module_url(cfg, "tariffs"), cfg.token) {
+        Ok(_)  => CasePass,
+        Err(e) => CaseFail(cc.client_error_short(e)),
+      }
     },
   }
 }
@@ -66,7 +126,10 @@ fn case_tariffs_list_returns_ok() -> cc.Case {
 fn suite() -> List[cc.Case] {
   [
     case_versions_returns_ok(),
-    case_authorize_known_token_returns_allowed(),
+    case_version_detail_returns_ok(),
+    case_authorize_allowed(),
+    case_authorize_blocked(),
+    case_authorize_not_allowed(),
     case_tariffs_list_returns_ok(),
   ]
 }
