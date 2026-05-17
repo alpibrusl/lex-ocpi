@@ -31,6 +31,8 @@ import "../src/route"           as oroute
 import "../src/status"          as ocpi_status
 import "../src/versions"        as versions
 import "../src/module_id"       as mid
+import "../src/pagination"      as pagination
+import "../src/filters"         as filters
 
 # ---- Static configuration ---------------------------------------
 
@@ -49,14 +51,28 @@ fn valid_cpo_token() -> Str { "cpo-secret" }
 
 # ---- Demo objects -----------------------------------------------
 
-fn demo_location() -> jv.Json {
+# Locations fixture — six entries with distinct `last_updated`
+# timestamps so the harness can exercise pagination boundaries and
+# date-range filters against a real result set.
+fn demo_locations() -> List[jv.Json] {
+  [
+    one_location("LOC1", "Stationsplein 1",    "2026-05-15T10:00:00Z"),
+    one_location("LOC2", "Damrak 70",          "2026-05-15T14:00:00Z"),
+    one_location("LOC3", "Leidseplein 12",     "2026-05-16T08:00:00Z"),
+    one_location("LOC4", "Museumplein 6",      "2026-05-16T20:00:00Z"),
+    one_location("LOC5", "Vondelpark Garage",  "2026-05-17T09:00:00Z"),
+    one_location("LOC6", "Westerpark Stalling","2026-05-17T18:00:00Z"),
+  ]
+}
+
+fn one_location(id :: Str, address :: Str, ts :: Str) -> jv.Json {
   JObj([
     ("country_code", JStr(cpo_country())),
     ("party_id",     JStr(cpo_party())),
-    ("id",           JStr("LOC1")),
+    ("id",           JStr(id)),
     ("publish",      JBool(true)),
     ("name",         JStr("Example Garage")),
-    ("address",      JStr("Stationsplein 1")),
+    ("address",      JStr(address)),
     ("city",         JStr("Amsterdam")),
     ("country",      JStr("NLD")),
     ("coordinates",  JObj([
@@ -75,15 +91,20 @@ fn demo_location() -> jv.Json {
             ("power_type",   JStr("AC_3_PHASE")),
             ("max_voltage",  JInt(400)),
             ("max_amperage", JInt(32)),
-            ("last_updated", JStr("2026-05-15T10:00:00Z")),
+            ("last_updated", JStr(ts)),
           ]),
         ])),
-        ("last_updated", JStr("2026-05-15T10:00:00Z")),
+        ("last_updated", JStr(ts)),
       ]),
     ])),
     ("time_zone",    JStr("Europe/Amsterdam")),
-    ("last_updated", JStr("2026-05-15T10:00:00Z")),
+    ("last_updated", JStr(ts)),
   ])
+}
+
+# LOC1, used by the by-id case below.
+fn demo_location() -> jv.Json {
+  one_location("LOC1", "Stationsplein 1", "2026-05-15T10:00:00Z")
 }
 
 fn demo_session() -> jv.Json {
@@ -229,7 +250,7 @@ fn get_version_detail_v230(_req :: oroute.OcpiRequest) -> oroute.HandlerResult {
 }
 
 fn get_locations(_req :: oroute.OcpiRequest) -> oroute.HandlerResult {
-  oroute.ok_list([demo_location()])
+  oroute.ok_list(demo_locations())
 }
 
 fn get_location_by_id(req :: oroute.OcpiRequest) -> oroute.HandlerResult {
@@ -332,17 +353,81 @@ fn json_response(body :: Str) -> Response {
 
 fn handle(req :: Request) -> [time] Response {
   let timestamp := time.now_str()
-  let result := match check_authorization(req.headers, timestamp) {
-    Some(err) => err,
+  let query     := parse_query(req.query)
+  match check_authorization(req.headers, timestamp) {
+    Some(err) => json_response(env.encode(err)),
     None      => match check_unsupported_version(req.path, timestamp) {
-      Some(err) => err,
+      Some(err) => json_response(env.encode(err)),
       None      => match check_body_parseable(req, timestamp) {
-        Some(err) => err,
-        None      => dispatch_request(req, timestamp),
+        Some(err) => json_response(env.encode(err)),
+        None      => render_dispatched(req, query, timestamp),
       },
     },
   }
-  json_response(env.encode(result))
+}
+
+# After the gates pass, route the request. The pure dispatcher emits
+# only the envelope; the locations-list path is the one OCPI endpoint
+# that also needs pagination headers (`X-Total-Count`, `Link`), so
+# that path bypasses dispatch and assembles the Response inline. Every
+# other path goes through `dispatch_request` unchanged.
+fn render_dispatched(
+  req       :: Request,
+  query     :: Map[Str, Str],
+  timestamp :: Str
+) -> Response {
+  if is_locations_list(req.method, req.path) {
+    paginated_locations_response(query, req.path, timestamp)
+  } else {
+    json_response(env.encode(dispatch_request(req, query, timestamp)))
+  }
+}
+
+fn is_locations_list(method :: Str, bare_path :: Str) -> Bool {
+  if method == "GET" {
+    match map_url_to_module(bare_path) {
+      None        => false,
+      Some(entry) => entry.module == mid.locations(),
+    }
+  } else { false }
+}
+
+# Build the paginated /locations response. Pulls `?date_from` /
+# `?date_to` from the query, filters the fixture, paginates per
+# `?offset=N&limit=M`, encodes the envelope, and merges the pagination
+# headers into the HTTP response.
+fn paginated_locations_response(
+  query     :: Map[Str, Str],
+  bare_path :: Str,
+  timestamp :: Str
+) -> Response {
+  let range   := filters.from_query(query)
+  let all     := filters.apply(demo_locations(), range)
+  let req     := pagination.clamp_limit(pagination.from_query(query), 1000)
+  let page    := pagination.paginate(all, req, list.len(all))
+  let body    := env.encode(env.ok_list(page.items, timestamp))
+  let next_url := str.concat("http://localhost:9100", bare_path)
+  let extra   := pagination.headers(page, next_url)
+  {
+    body:    BodyStr(body),
+    status:  200,
+    headers: map.merge(
+               map.set(map.new(), "content-type", "application/json"),
+               extra),
+  }
+}
+
+fn parse_query(qs :: Str) -> Map[Str, Str] {
+  list.fold(str.split(qs, "&"), map.new(),
+    fn (acc :: Map[Str, Str], kv :: Str) -> Map[Str, Str] {
+      match list.head(str.split(kv, "=")) {
+        None    => acc,
+        Some(k) => match list.head(list.tail(str.split(kv, "="))) {
+          None    => acc,
+          Some(v) => map.set(acc, k, v),
+        },
+      }
+    })
 }
 
 # Auth gate. Three failure modes, all map to status_code 2000:
@@ -437,12 +522,15 @@ fn is_write_method(m :: Str) -> Bool {
   m == "POST" or m == "PUT" or m == "PATCH"
 }
 
-fn dispatch_request(req :: Request, timestamp :: Str) -> env.OcpiResponse {
+fn dispatch_request(
+  req       :: Request,
+  query     :: Map[Str, Str],
+  timestamp :: Str
+) -> env.OcpiResponse {
   let m := req.method
-  let p := req.path
-  let routed := match map_url_to_module(p) {
-    None        => ocpi_request(m, "unknown", p, map.new(), req),
-    Some(entry) => ocpi_request(m, entry.module, p, entry.params, req),
+  let routed := match map_url_to_module(req.path) {
+    None        => ocpi_request(m, "unknown",    req.path, map.new(),    query, req),
+    Some(entry) => ocpi_request(m, entry.module, req.path, entry.params, query, req),
   }
   oroute.dispatch(registry(), routed, timestamp)
 }
@@ -519,6 +607,7 @@ fn ocpi_request(
   module_name :: Str,
   path        :: Str,
   params      :: Map[Str, Str],
+  query       :: Map[Str, Str],
   req         :: Request
 ) -> oroute.OcpiRequest {
   let body := match jv.parse(req.body) {
@@ -526,7 +615,7 @@ fn ocpi_request(
     Ok(j)   => j,
   }
   let hdrs := h.from_map(req.headers)
-  oroute.request(method, module_name, path, params, map.new(), hdrs, body)
+  oroute.request(method, module_name, path, params, query, hdrs, body)
 }
 
 # ---- Entry point ------------------------------------------------
