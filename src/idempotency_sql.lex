@@ -43,6 +43,12 @@
 # date-parse primitive, and `time.now_ms()` (lex 0.9.2+) gives us
 # the wall-clock value directly.
 #
+# `Db` (no qualifier) is the std.sql connection-handle primitive,
+# same as `HttpRequest` / `SqlParam` / `SqlError`. Lex 0.9.x
+# auto-imports these into the global namespace; `sql.Db` is not the
+# same nominal type (see PR #21 CI failure: 6× `expected Db, got
+# sql.Db`).
+#
 # Effects:
 #   * `setup`, `try_reserve`, `store_completed`, `forget`,
 #     `purge_expired`, `inspect_existing` — `[sql]`
@@ -81,7 +87,7 @@ fn table_name() -> Str {
 
 # ---- Schema bootstrap ------------------------------------------
 
-fn setup(db :: sql.Db) -> [sql] Result[Unit, Str] {
+fn setup(db :: Db) -> [sql] Result[Unit, Str] {
   let t := table_name()
   let create_sql := str.concat(
     "CREATE TABLE IF NOT EXISTS ",
@@ -120,7 +126,7 @@ type SqlReserve =
 # free — the caller will time-out the poll and forge ahead.
 
 fn try_reserve(
-  db             :: sql.Db,
+  db             :: Db,
   key            :: Str,
   now_ms         :: Int,
   expires_at_ms  :: Int
@@ -140,7 +146,7 @@ fn try_reserve(
 }
 
 fn inspect_existing(
-  db       :: sql.Db,
+  db       :: Db,
   key      :: Str,
   now_ms   :: Int
 ) -> [sql] SqlReserve {
@@ -183,7 +189,7 @@ fn decode_existing(
 # ---- Completion store ------------------------------------------
 
 fn store_completed(
-  db   :: sql.Db,
+  db   :: Db,
   key  :: Str,
   resp :: env.OcpiResponse
 ) -> [sql] Result[Unit, Str] {
@@ -211,7 +217,7 @@ fn stringify_response(r :: env.OcpiResponse) -> Str {
   ]))
 }
 
-fn forget(db :: sql.Db, key :: Str) -> [sql] Result[Unit, Str] {
+fn forget(db :: Db, key :: Str) -> [sql] Result[Unit, Str] {
   let t := table_name()
   let del_sql := str.concat(
     "DELETE FROM ", str.concat(t, " WHERE cache_key = $1"))
@@ -225,7 +231,7 @@ fn forget(db :: sql.Db, key :: Str) -> [sql] Result[Unit, Str] {
 # sweeper; correctness doesn't depend on it (reads filter on
 # `expires_at_ms > now_ms` anyway), but unbounded growth without
 # this would eventually hurt INSERT/SELECT performance.
-fn purge_expired(db :: sql.Db, now_ms :: Int) -> [sql] Result[Int, Str] {
+fn purge_expired(db :: Db, now_ms :: Int) -> [sql] Result[Int, Str] {
   let t := table_name()
   let del_sql := str.concat(
     "DELETE FROM ", str.concat(t, " WHERE expires_at_ms < $1"))
@@ -246,7 +252,7 @@ fn purge_expired(db :: sql.Db, now_ms :: Int) -> [sql] Result[Int, Str] {
 
 fn dispatch_with_cache_sql(
   reg       :: rio.IoRegistry,
-  db        :: sql.Db,
+  db        :: Db,
   cfg       :: SqlCacheConfig,
   req       :: route.OcpiRequest,
   timestamp :: Str
@@ -262,7 +268,7 @@ fn dispatch_with_cache_sql(
 
 fn dispatch_branch_sql(
   reg       :: rio.IoRegistry,
-  db        :: sql.Db,
+  db        :: Db,
   cfg       :: SqlCacheConfig,
   req       :: route.OcpiRequest,
   timestamp :: Str,
@@ -282,7 +288,7 @@ fn dispatch_branch_sql(
 # rather return it than fail just because we couldn't cache.
 fn run_and_store(
   reg       :: rio.IoRegistry,
-  db        :: sql.Db,
+  db        :: Db,
   req       :: route.OcpiRequest,
   timestamp :: Str,
   key       :: Str
@@ -296,7 +302,7 @@ fn run_and_store(
 # Same shape as the in-memory variant's `poll_for_completion`.
 fn wait_or_fallback(
   reg       :: rio.IoRegistry,
-  db        :: sql.Db,
+  db        :: Db,
   cfg       :: SqlCacheConfig,
   req       :: route.OcpiRequest,
   timestamp :: Str,
@@ -308,7 +314,7 @@ fn wait_or_fallback(
 
 fn poll_loop_sql(
   reg         :: rio.IoRegistry,
-  db          :: sql.Db,
+  db          :: Db,
   cfg         :: SqlCacheConfig,
   req         :: route.OcpiRequest,
   timestamp   :: Str,
