@@ -12,25 +12,6 @@
 # Run:
 #   lex run --allow-effects net,io,time conformance/cpo_harness.lex main
 #   lex run --allow-effects net,io,time conformance/cpo_harness.lex main_json
-#
-# Scope (v2.2.1; grows iteratively — each PR appends cases to
-# `suite()` without touching the runner):
-#
-#    1. GET /ocpi/versions returns 1000 envelope
-#    2. GET /ocpi/versions data is a non-empty list
-#    3. GET /ocpi/2.2.1 returns 1000 envelope (version detail)
-#    4. GET /ocpi/2.2.1/locations returns 1000 envelope
-#    5. GET /ocpi/2.2.1/locations/LOC1 has country_code = "NL"
-#    6. GET /ocpi/2.2.1/locations/LOC1 has an `evses` array
-#    7. GET /ocpi/2.2.1/locations/LOC9 returns OCPI error 2003
-#    8. GET /ocpi/wat returns OCPI 2000 (unknown route)
-#    9. GET /ocpi/2.2.1/sessions returns 1000 envelope
-#   10. GET /ocpi/2.2.1/cdrs returns 1000 envelope
-#   11. GET /ocpi/2.2.1/tariffs returns 1000 envelope
-#   12. First CDR has total_cost.excl_vat
-#   13. First Tariff has non-empty `elements`
-#   14. Missing Authorization header returns OCPI 2000
-#   15. Bearer-scheme Authorization returns OCPI 2000
 
 import "std.io"   as io
 import "std.int"  as int
@@ -196,8 +177,6 @@ fn case_unknown_path_returns_2000() -> cc.Case {
   }
 }
 
-# ---- Sessions / CDRs / Tariffs list endpoints -----------------
-
 fn case_sessions_list_returns_ok() -> cc.Case {
   {
     name: "GET /ocpi/2.2.1/sessions returns 1000 envelope",
@@ -285,14 +264,6 @@ fn check_first_tariff_elements(data :: jv.Json) -> cc.CaseResult {
 }
 
 # ---- Auth negative cases --------------------------------------
-#
-# OCPI §4.2 requires `Authorization: Token <b64>` on every request.
-# Spec violation → receiver returns a 2000-class envelope (NOT a
-# 401 HTTP status — OCPI errors travel inside the envelope, the
-# HTTP layer stays 200). We exercise two failure modes:
-#
-#   - header absent entirely
-#   - header present but using a non-`Token` scheme (Bearer / Basic)
 
 fn assert_ocpi_2000(
   res   :: Result[jv.Json, client.ClientError],
@@ -317,8 +288,6 @@ fn case_missing_auth_returns_2000() -> cc.Case {
   {
     name: "GET /ocpi/versions without Authorization returns OCPI 2000",
     run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
-      # Build the request without calling `with_token` — the
-      # Authorization header is absent.
       let req := client.base_request("GET", cc.versions_url(cfg))
       assert_ocpi_2000(client.send(req), "missing-auth")
     },
@@ -333,6 +302,93 @@ fn case_malformed_auth_returns_2000() -> cc.Case {
         client.base_request("GET", cc.versions_url(cfg)),
         "authorization", "Bearer wrong-scheme")
       assert_ocpi_2000(client.send(req), "malformed-auth")
+    },
+  }
+}
+
+# ---- CPO-as-receiver: Tokens PUT + Commands POST ---------------
+#
+# These exercise the CPO's RECEIVER endpoints — the inverse of
+# Locations / Sessions / CDRs / Tariffs. An eMSP pushes its Token
+# catalogue to the CPO (PUT) and asks the CPO to act on a charge
+# session (POST commands).
+
+fn token_put_url(cfg :: cc.TargetConfig, uid :: Str) -> Str {
+  str.concat(cc.module_url(cfg, "tokens"),
+    str.concat("/DE/ABC/", uid))
+}
+
+fn minimal_token_body(uid :: Str) -> Str {
+  jv.stringify(JObj([
+    ("country_code", JStr("DE")),
+    ("party_id",     JStr("ABC")),
+    ("uid",          JStr(uid)),
+    ("type",         JStr("RFID")),
+    ("contract_id",  JStr("DE-ABC-C12345-T")),
+    ("issuer",       JStr("eMSP Example")),
+    ("valid",        JBool(true)),
+    ("whitelist",    JStr("ALWAYS")),
+    ("last_updated", JStr("2026-05-15T10:00:00Z")),
+  ]))
+}
+
+fn case_put_token_returns_ok() -> cc.Case {
+  {
+    name: "PUT /ocpi/2.2.1/tokens/DE/ABC/RFID-A returns 1000 envelope",
+    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+      match client.put_json(token_put_url(cfg, "RFID-A"),
+                            minimal_token_body("RFID-A"),
+                            cfg.token) {
+        Ok(_)  => CasePass,
+        Err(e) => CaseFail(cc.client_error_short(e)),
+      }
+    },
+  }
+}
+
+fn command_url(cfg :: cc.TargetConfig, command :: Str) -> Str {
+  str.concat(cc.module_url(cfg, "commands"),
+    str.concat("/", command))
+}
+
+fn start_session_body() -> Str {
+  jv.stringify(JObj([
+    ("response_url", JStr("http://localhost:9101/ocpi/2.2.1/callback/cmd-1")),
+    ("token",        JObj([
+      ("country_code", JStr("DE")),
+      ("party_id",     JStr("ABC")),
+      ("uid",          JStr("RFID-A")),
+      ("type",         JStr("RFID")),
+      ("contract_id",  JStr("DE-ABC-C12345-T")),
+    ])),
+    ("location_id",  JStr("LOC1")),
+  ]))
+}
+
+fn case_post_command_returns_accepted() -> cc.Case {
+  {
+    name: "POST /ocpi/2.2.1/commands/START_SESSION returns ACCEPTED",
+    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+      match client.post_json(command_url(cfg, "START_SESSION"),
+                             start_session_body(), cfg.token) {
+        Err(e)   => CaseFail(cc.client_error_short(e)),
+        Ok(data) => check_command_result(data, "ACCEPTED"),
+      }
+    },
+  }
+}
+
+fn check_command_result(data :: jv.Json, want :: Str) -> cc.CaseResult {
+  match jv.get_field(data, "result") {
+    None    => CaseFail("CommandResponse missing `result`"),
+    Some(v) => match jv.as_str(v) {
+      None    => CaseFail("`result` is not a string"),
+      Some(s) => if s == want {
+                   CasePass
+                 } else {
+                   CaseFail(str.concat("result=", str.concat(s,
+                     str.concat(", want ", want))))
+                 },
     },
   }
 }
@@ -356,6 +412,8 @@ fn suite() -> List[cc.Case] {
     case_first_tariff_has_elements(),
     case_missing_auth_returns_2000(),
     case_malformed_auth_returns_2000(),
+    case_put_token_returns_ok(),
+    case_post_command_returns_accepted(),
   ]
 }
 
@@ -375,10 +433,6 @@ fn main() -> [net, io] Int {
   if summary.failed > 0 { 1 / 0 } else { 0 }
 }
 
-# Machine-readable variant. Emits a single-line JSON document with
-# the per-case breakdown + counts; useful for CI dashboards that
-# parse stdout. Exit code matches `main`: non-zero iff any case
-# failed.
 fn main_json() -> [net, io] Int {
   let cfg := default_target()
   let summary := cc.run_suite(suite(), cfg)
