@@ -1,9 +1,9 @@
-# lex-ocpi — minimal OCPI 2.2.1 CPO server
+# lex-ocpi — OCPI 2.2.1 CPO server
 #
-# Implements the smallest interoperable surface: Versions discovery
-# + Credentials handshake + a single-location read-only Locations
-# endpoint. Drop in a real Locations / Sessions / CDRs source via
-# the route registry to build a production CPO.
+# Implements the v2.2.1 surface this library currently exercises:
+# Versions discovery + Locations + Sessions + CDRs + Tariffs.
+# Drop in real Sessions / CDRs / Tariffs sources via the route
+# registry to build a production CPO.
 #
 # Routing is wired up at the `registry()` constructor — add or
 # remove `handler(...)` calls there to extend the surface.
@@ -91,11 +91,116 @@ fn demo_location() -> jv.Json {
   ])
 }
 
-# ---- Pure handlers (no effects) ---------------------------------
+# ---- Demo Session (OCPI 2.2.1 §9) ------------------------------
+
+fn demo_session() -> jv.Json {
+  JObj([
+    ("country_code",     JStr(cpo_country())),
+    ("party_id",         JStr(cpo_party())),
+    ("id",               JStr("SESS1")),
+    ("start_date_time",  JStr("2026-05-15T10:00:00Z")),
+    ("kwh",              JFloat(15.5)),
+    ("cdr_token",        JObj([
+      ("country_code", JStr("DE")),
+      ("party_id",     JStr("ABC")),
+      ("uid",          JStr("RFID-A")),
+      ("type",         JStr("RFID")),
+      ("contract_id",  JStr("DE-ABC-C12345-T")),
+    ])),
+    ("auth_method",      JStr("WHITELIST")),
+    ("location_id",      JStr("LOC1")),
+    ("evse_uid",         JStr("EVSE1")),
+    ("connector_id",     JStr("1")),
+    ("currency",         JStr("EUR")),
+    ("status",           JStr("ACTIVE")),
+    ("last_updated",     JStr("2026-05-15T10:00:00Z")),
+  ])
+}
+
+# ---- Demo CDR (OCPI 2.2.1 §10) ---------------------------------
 #
-# Each handler returns a `HandlerResult` — the dispatcher wraps the
-# result in the OCPI envelope. Path params arrive via the
-# `OcpiRequest.path_params` Map populated by the HTTP adapter below.
+# Minimum-credible: every spec-required field present + one
+# ChargingPeriod with one CdrDimension. `cdr_location` is the
+# flattened Location snapshot (the CDR is immutable; a referenced
+# Location may move/change later).
+
+fn demo_cdr() -> jv.Json {
+  JObj([
+    ("country_code",     JStr(cpo_country())),
+    ("party_id",         JStr(cpo_party())),
+    ("id",               JStr("CDR1")),
+    ("start_date_time",  JStr("2026-05-15T10:00:00Z")),
+    ("end_date_time",    JStr("2026-05-15T11:00:00Z")),
+    ("cdr_token",        JObj([
+      ("country_code", JStr("DE")),
+      ("party_id",     JStr("ABC")),
+      ("uid",          JStr("RFID-A")),
+      ("type",         JStr("RFID")),
+      ("contract_id",  JStr("DE-ABC-C12345-T")),
+    ])),
+    ("auth_method",      JStr("WHITELIST")),
+    ("cdr_location",     JObj([
+      ("id",                    JStr("LOC1")),
+      ("address",               JStr("Stationsplein 1")),
+      ("city",                  JStr("Amsterdam")),
+      ("country",               JStr("NLD")),
+      ("coordinates",           JObj([
+        ("latitude",  JStr("52.379")),
+        ("longitude", JStr("4.900")),
+      ])),
+      ("evse_uid",              JStr("EVSE1")),
+      ("evse_id",               JStr("NL*EXM*E001")),
+      ("connector_id",          JStr("1")),
+      ("connector_standard",    JStr("IEC_62196_T2")),
+      ("connector_format",      JStr("SOCKET")),
+      ("connector_power_type",  JStr("AC_3_PHASE")),
+    ])),
+    ("currency",         JStr("EUR")),
+    ("charging_periods", JList([
+      JObj([
+        ("start_date_time", JStr("2026-05-15T10:00:00Z")),
+        ("dimensions",      JList([
+          JObj([
+            ("type",   JStr("ENERGY")),
+            ("volume", JFloat(15.5)),
+          ]),
+        ])),
+      ]),
+    ])),
+    ("total_cost",       JObj([("excl_vat", JFloat(5.50))])),
+    ("total_energy",     JFloat(15.5)),
+    ("total_time",       JFloat(1.0)),
+    ("last_updated",     JStr("2026-05-15T10:00:00Z")),
+  ])
+}
+
+# ---- Demo Tariff (OCPI 2.2.1 §11) ------------------------------
+#
+# Minimum-credible: one TariffElement with one PriceComponent
+# (ListNonEmpty in both directions).
+
+fn demo_tariff() -> jv.Json {
+  JObj([
+    ("country_code", JStr(cpo_country())),
+    ("party_id",     JStr(cpo_party())),
+    ("id",           JStr("TARIFF1")),
+    ("currency",     JStr("EUR")),
+    ("elements",     JList([
+      JObj([
+        ("price_components", JList([
+          JObj([
+            ("type",      JStr("ENERGY")),
+            ("price",     JFloat(0.30)),
+            ("step_size", JInt(1)),
+          ]),
+        ])),
+      ]),
+    ])),
+    ("last_updated", JStr("2026-05-15T10:00:00Z")),
+  ])
+}
+
+# ---- Pure handlers (no effects) ---------------------------------
 
 fn get_versions(_req :: oroute.OcpiRequest) -> oroute.HandlerResult {
   oroute.ok_list([
@@ -127,6 +232,18 @@ fn get_location_by_id(req :: oroute.OcpiRequest) -> oroute.HandlerResult {
   }
 }
 
+fn get_sessions(_req :: oroute.OcpiRequest) -> oroute.HandlerResult {
+  oroute.ok_list([demo_session()])
+}
+
+fn get_cdrs(_req :: oroute.OcpiRequest) -> oroute.HandlerResult {
+  oroute.ok_list([demo_cdr()])
+}
+
+fn get_tariffs(_req :: oroute.OcpiRequest) -> oroute.HandlerResult {
+  oroute.ok_list([demo_tariff()])
+}
+
 # ---- Registry wiring --------------------------------------------
 #
 # Routes are keyed by `(method, module)`; the HTTP adapter below
@@ -148,17 +265,18 @@ fn registry() -> oroute.Registry {
     |> fn (r :: oroute.Registry) -> oroute.Registry {
          oroute.handler(r, oroute.get(), "location_by_id", get_location_by_id)
        }
+    |> fn (r :: oroute.Registry) -> oroute.Registry {
+         oroute.handler(r, oroute.get(), mid.sessions(), get_sessions)
+       }
+    |> fn (r :: oroute.Registry) -> oroute.Registry {
+         oroute.handler(r, oroute.get(), mid.cdrs(), get_cdrs)
+       }
+    |> fn (r :: oroute.Registry) -> oroute.Registry {
+         oroute.handler(r, oroute.get(), mid.tariffs(), get_tariffs)
+       }
 }
 
 # ---- HTTP adapter ------------------------------------------------
-#
-# `std.net.serve_fn` hands every handler a built-in `Request` record
-# (`{ method, path, query, body, headers }`) and expects a built-in
-# `Response` (`{ status, body :: ResponseBody, headers }`). We do the
-# URL → (module, path_params) mapping here, hand the resulting
-# `OcpiRequest` to the OCPI dispatcher, and encode the OCPI envelope
-# into the HTTP response body. Effects `[time]` come from stamping
-# the response timestamp.
 
 fn json_response(body :: Str) -> Response {
   {
@@ -180,11 +298,6 @@ fn handle(req :: Request) -> [time] Response {
 }
 
 # ---- URL → (module, path_params) --------------------------------
-#
-# A tiny URL router. Real implementations layer lex-web's
-# pattern-matching router on top; this version keeps the example
-# free of cross-package deps so `lex check` works against just
-# lex-schema.
 
 type RouteHit = { module :: Str, params :: Map[Str, Str] }
 
@@ -202,9 +315,15 @@ fn map_url_to_module(path :: Str) -> Option[RouteHit] {
       module: "location_by_id",
       params: map.set(map.new(), "location_id", loc_id),
     })
+  } else { if path == "/ocpi/2.2.1/sessions" {
+    Some({ module: mid.sessions(), params: map.new() })
+  } else { if path == "/ocpi/2.2.1/cdrs" {
+    Some({ module: mid.cdrs(), params: map.new() })
+  } else { if path == "/ocpi/2.2.1/tariffs" {
+    Some({ module: mid.tariffs(), params: map.new() })
   } else {
     None
-  } } } }
+  } } } } } } }
 }
 
 fn ocpi_request(
