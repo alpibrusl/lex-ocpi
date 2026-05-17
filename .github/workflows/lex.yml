@@ -80,10 +80,13 @@ jobs:
           CPO_PID=$!
           lex run --allow-effects net,io,time,concurrent examples/emsp_v221.lex main &
           EMSP_PID=$!
-          trap 'kill ${CPO_PID} ${EMSP_PID} 2>/dev/null || true' EXIT
+          lex run --allow-effects net,io,time examples/cpo_buggy.lex main &
+          BUGGY_PID=$!
+          trap 'kill ${CPO_PID} ${EMSP_PID} ${BUGGY_PID} 2>/dev/null || true' EXIT
           for i in $(seq 1 50); do
             if curl -sf http://localhost:9100/ocpi/versions > /dev/null \
-               && curl -sf http://localhost:9101/ocpi/versions > /dev/null; then
+               && curl -sf http://localhost:9101/ocpi/versions > /dev/null \
+               && curl -sf http://localhost:9103/ocpi/versions > /dev/null; then
               break
             fi
             sleep 0.1
@@ -97,3 +100,9 @@ jobs:
           lex run --allow-effects net,io,time conformance/cpo_harness.lex main_v211
           lex run --allow-effects net,io,time conformance/cpo_harness.lex main_v230
           lex run --allow-effects net,io,time conformance/emsp_harness.lex main
+          # Harness self-test: assert the harness catches deliberate
+          # spec violations from `examples/cpo_buggy.lex`. A passing
+          # selftest proves the harness's assertions actually have
+          # teeth — every wrapped case must turn FAIL → PASS via
+          # `cc.expect_fail`.
+          lex run --allow-effects net,io,time conformance/selftest.lex main

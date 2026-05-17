@@ -62,6 +62,25 @@ fn run_case(c :: Case, cfg :: TargetConfig) -> [net] CaseResult {
   (c.run)(cfg)
 }
 
+# Harness self-test: wraps a case so the verdict is inverted. A
+# `CaseFail` from the inner case becomes a `CasePass` (the harness
+# correctly caught a buggy peer); a `CasePass` becomes a
+# `CaseFail` (the case missed a bug it should have flagged). The
+# name is annotated `[expect-fail]` so it's obvious in the rollup
+# what the case is actually asserting.
+fn expect_fail(c :: Case) -> Case {
+  {
+    name: str.concat("[expect-fail] ", c.name),
+    run: fn (cfg :: TargetConfig) -> [net] CaseResult {
+      match (c.run)(cfg) {
+        CaseFail(_) => CasePass,
+        CasePass    => CaseFail("expected underlying case to fail, but it passed"),
+        CaseSkip(m) => CaseSkip(m),
+      }
+    },
+  }
+}
+
 # ---- Error rendering ------------------------------------------
 
 fn client_error_short(e :: client.ClientError) -> Str {
