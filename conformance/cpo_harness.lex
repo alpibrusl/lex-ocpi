@@ -22,13 +22,16 @@
 #    9. GET /ocpi/2.2.1/sessions returns 1000 envelope
 #   10. GET /ocpi/2.2.1/cdrs returns 1000 envelope
 #   11. GET /ocpi/2.2.1/tariffs returns 1000 envelope
-#   12. First CDR has total_cost.excl_vat (numeric)
-#   13. First Tariff has non-empty `elements` array
+#   12. First CDR has total_cost.excl_vat
+#   13. First Tariff has non-empty `elements`
+#   14. Missing Authorization header returns OCPI 2000
+#   15. Bearer-scheme Authorization returns OCPI 2000
 
 import "std.io"   as io
 import "std.int"  as int
 import "std.list" as list
 import "std.str"  as str
+import "std.http" as http
 
 import "lex-schema/json_value" as jv
 
@@ -226,9 +229,6 @@ fn case_tariffs_list_returns_ok() -> cc.Case {
   }
 }
 
-# Field-shape: the first CDR carries `total_cost.excl_vat`. CDRs
-# without total_cost are invalid per spec §10 even if the envelope
-# decodes. We just check that the field exists and is numeric.
 fn case_first_cdr_has_total_cost() -> cc.Case {
   {
     name: "GET /ocpi/2.2.1/cdrs first entry has total_cost.excl_vat",
@@ -249,8 +249,7 @@ fn check_first_cdr_total_cost(data :: jv.Json) -> cc.CaseResult {
         None    => CaseFail("first CDR missing total_cost"),
         Some(c) => match jv.get_field(c, "excl_vat") {
           None    => CaseFail("total_cost missing excl_vat"),
-          Some(_) => CasePass,                # presence is enough; numeric
-                                                # check would need jv.as_float
+          Some(_) => CasePass,
         },
       },
     },
@@ -280,6 +279,59 @@ fn check_first_tariff_elements(data :: jv.Json) -> cc.CaseResult {
   }
 }
 
+# ---- Auth negative cases --------------------------------------
+#
+# OCPI §4.2 requires `Authorization: Token <b64>` on every request.
+# Spec violation → receiver returns a 2000-class envelope (NOT a
+# 401 HTTP status — OCPI errors travel inside the envelope, the
+# HTTP layer stays 200). We exercise two failure modes:
+#
+#   - header absent entirely
+#   - header present but using a non-`Token` scheme (Bearer / Basic)
+
+fn assert_ocpi_2000(
+  res   :: Result[jv.Json, client.ClientError],
+  label :: Str
+) -> cc.CaseResult {
+  match res {
+    Ok(_) => CaseFail(str.concat(label, ": expected 2000, got 1000-success")),
+    Err(OcpiError(r)) => if r.status_code == 2000 {
+                          CasePass
+                        } else {
+                          CaseFail(str.concat(label,
+                            str.concat(": expected 2000, got ",
+                              int.to_str(r.status_code))))
+                        },
+    Err(e) => CaseFail(str.concat(label,
+                str.concat(": expected OCPI 2000, got ",
+                  cc.client_error_short(e)))),
+  }
+}
+
+fn case_missing_auth_returns_2000() -> cc.Case {
+  {
+    name: "GET /ocpi/versions without Authorization returns OCPI 2000",
+    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+      # Build the request without calling `with_token` — the
+      # Authorization header is absent.
+      let req := client.base_request("GET", cc.versions_url(cfg))
+      assert_ocpi_2000(client.send(req), "missing-auth")
+    },
+  }
+}
+
+fn case_malformed_auth_returns_2000() -> cc.Case {
+  {
+    name: "GET /ocpi/versions with Bearer auth returns OCPI 2000",
+    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+      let req := http.with_header(
+        client.base_request("GET", cc.versions_url(cfg)),
+        "authorization", "Bearer wrong-scheme")
+      assert_ocpi_2000(client.send(req), "malformed-auth")
+    },
+  }
+}
+
 # ---- Suite + runner -------------------------------------------
 
 fn suite() -> List[cc.Case] {
@@ -297,6 +349,8 @@ fn suite() -> List[cc.Case] {
     case_tariffs_list_returns_ok(),
     case_first_cdr_has_total_cost(),
     case_first_tariff_has_elements(),
+    case_missing_auth_returns_2000(),
+    case_malformed_auth_returns_2000(),
   ]
 }
 

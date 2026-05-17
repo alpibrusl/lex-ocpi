@@ -15,14 +15,15 @@
 #   curl -H "Authorization: Token cpo-secret" \
 #        http://localhost:9100/ocpi/2.2.1/locations/LOC1
 #
-# Adversarial scenario:
-#   - A client that GETs /ocpi/2.2.1/locations/LOC9 (no such location)
+# Adversarial scenarios:
+#   - Request without `Authorization` (or with a non-`Token` scheme)
 #     gets a 200-status HTTP response carrying an OCPI envelope with
-#     `status_code: 2003 ("Unknown Location")`. The HTTP layer is
-#     intentionally lenient — OCPI errors travel inside the envelope.
+#     `status_code: 2000 ("Generic client error")`. The HTTP layer
+#     stays 200 — OCPI errors travel inside the envelope.
+#   - GET /ocpi/2.2.1/locations/LOC9 (no such location) returns the
+#     spec-shaped `2003 ("Unknown Location")` envelope.
 #   - A request with a method/path the registry doesn't know maps to
-#     `status_code: 2000 ("Generic client error")` from the dispatcher's
-#     unknown-route fallback.
+#     `status_code: 2000` from the dispatcher's unknown-route fallback.
 
 import "std.io"   as io
 import "std.net"  as net
@@ -40,10 +41,6 @@ import "../src/versions"        as versions
 import "../src/module_id"       as mid
 
 # ---- Static configuration ---------------------------------------
-#
-# A real CPO reads this from config / a database. We hard-code one
-# Location for the demo. `party_id` + `country_code` identify this
-# CPO to its eMSPs.
 
 fn cpo_country() -> Str { "NL" }
 fn cpo_party()   -> Str { "EXM" }
@@ -118,11 +115,6 @@ fn demo_session() -> jv.Json {
 }
 
 # ---- Demo CDR (OCPI 2.2.1 §10) ---------------------------------
-#
-# Minimum-credible: every spec-required field present + one
-# ChargingPeriod with one CdrDimension. `cdr_location` is the
-# flattened Location snapshot (the CDR is immutable; a referenced
-# Location may move/change later).
 
 fn demo_cdr() -> jv.Json {
   JObj([
@@ -175,9 +167,6 @@ fn demo_cdr() -> jv.Json {
 }
 
 # ---- Demo Tariff (OCPI 2.2.1 §11) ------------------------------
-#
-# Minimum-credible: one TariffElement with one PriceComponent
-# (ListNonEmpty in both directions).
 
 fn demo_tariff() -> jv.Json {
   JObj([
@@ -245,11 +234,6 @@ fn get_tariffs(_req :: oroute.OcpiRequest) -> oroute.HandlerResult {
 }
 
 # ---- Registry wiring --------------------------------------------
-#
-# Routes are keyed by `(method, module)`; the HTTP adapter below
-# converts the URL path into the module name. `version_detail` and
-# `location_by_id` are pseudo-modules — they don't appear in
-# `module_id.lex` but are dispatched through the same registry.
 
 fn registry() -> oroute.Registry {
   oroute.new()
@@ -287,14 +271,45 @@ fn json_response(body :: Str) -> Response {
 }
 
 fn handle(req :: Request) -> [time] Response {
+  let timestamp := time.now_str()
+  let result := match check_authorization(req.headers, timestamp) {
+    Some(err) => err,
+    None      => dispatch_request(req, timestamp),
+  }
+  json_response(env.encode(result))
+}
+
+# Auth gate: every request must carry `Authorization: Token <b64>`.
+# Returns `Some(2000 envelope)` to short-circuit when absent or
+# malformed; `None` lets the request fall through to dispatch.
+# Real CPOs additionally check that the token matches one of the
+# registered eMSPs' credentials; this fixture only checks shape.
+fn check_authorization(
+  headers   :: Map[Str, Str],
+  timestamp :: Str
+) -> Option[env.OcpiResponse] {
+  let authz := match map.get(headers, "authorization") {
+    None    => "",
+    Some(v) => v,
+  }
+  match h.strip_token_prefix(authz) {
+    Some(_) => None,                                # well-formed
+    None    => Some(env.fail_with_data(
+                      ocpi_status.client_error(),
+                      "Missing or malformed Authorization header",
+                      JNull,
+                      timestamp)),
+  }
+}
+
+fn dispatch_request(req :: Request, timestamp :: Str) -> env.OcpiResponse {
   let m := req.method
   let p := req.path
   let routed := match map_url_to_module(p) {
     None        => ocpi_request(m, "unknown", p, map.new(), req),
     Some(entry) => ocpi_request(m, entry.module, p, entry.params, req),
   }
-  let res := oroute.dispatch(registry(), routed, time.now_str())
-  json_response(env.encode(res))
+  oroute.dispatch(registry(), routed, timestamp)
 }
 
 # ---- URL → (module, path_params) --------------------------------
