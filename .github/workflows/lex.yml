@@ -72,24 +72,28 @@ jobs:
           JSON=$(jq -R -s . < /tmp/schema.json)
           lex run tools/gen.lex generate "$JSON" | grep -q 'fn heartbeat_schema'
 
-      - name: Conformance harness against the fake CPO example
+      - name: Conformance harnesses against the fake CPO + eMSP examples
         working-directory: lex-ocpi
         run: |
           set -uo pipefail
-          # Start the fake CPO server in the background.
+          # Spawn both fake servers in parallel; trap kills both on
+          # step exit (success, failure, or signal).
           lex run --allow-effects net,io,time examples/cpo_v221.lex main &
-          SERVER_PID=$!
-          # Kill the server on any exit (success, failure, or signal).
-          trap 'kill ${SERVER_PID} 2>/dev/null || true' EXIT
-          # Poll until the server is up (max 5s).
+          CPO_PID=$!
+          lex run --allow-effects net,io,time examples/emsp_v221.lex main &
+          EMSP_PID=$!
+          trap 'kill ${CPO_PID} ${EMSP_PID} 2>/dev/null || true' EXIT
+          # Poll until both servers are up (max 5s).
           for i in $(seq 1 50); do
-            if curl -sf http://localhost:9100/ocpi/versions > /dev/null; then
+            if curl -sf http://localhost:9100/ocpi/versions > /dev/null \
+               && curl -sf http://localhost:9101/ocpi/versions > /dev/null; then
               break
             fi
             sleep 0.1
           done
-          # Run the conformance harness against it. `time` is in the
-          # allow-list because src/client.lex's retry helpers carry
-          # `[time]` — the harness doesn't call them, but lex's
-          # effect checker scans every transitively-imported function.
+          # Run both harnesses. `time` is in the allow-list because
+          # src/client.lex's retry helpers carry [time] even though
+          # the harnesses don't invoke them — lex's effect checker
+          # scans every transitively-imported function.
           lex run --allow-effects net,io,time conformance/cpo_harness.lex main
+          lex run --allow-effects net,io,time conformance/emsp_harness.lex main
