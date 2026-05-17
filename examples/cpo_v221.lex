@@ -1,7 +1,8 @@
 # lex-ocpi — OCPI 2.2.1 CPO server
 #
 # Implements the v2.2.1 surface this library currently exercises:
-# Versions discovery + Locations + Sessions + CDRs + Tariffs.
+# Versions discovery + Locations + Sessions + CDRs + Tariffs (CPO
+# as sender) + Tokens PUT + Commands POST (CPO as receiver).
 # Drop in real Sessions / CDRs / Tariffs sources via the route
 # registry to build a production CPO.
 #
@@ -233,6 +234,30 @@ fn get_tariffs(_req :: oroute.OcpiRequest) -> oroute.HandlerResult {
   oroute.ok_list([demo_tariff()])
 }
 
+# ---- CPO-as-receiver: Tokens PUT + Commands POST ---------------
+#
+# eMSP pushes its Token catalogue to the CPO via PUT; the CPO is the
+# receiver. Real CPOs upsert into a token cache; this fixture just
+# acknowledges the write — empty-data 1000 envelope.
+#
+# Commands POST is the eMSP-asks-CPO-to-act direction (StartSession /
+# StopSession / ReserveNow / CancelReservation / UnlockConnector).
+# The sync reply is a `CommandResponse` envelope (ACCEPTED / REJECTED /
+# …); the async `CommandResult` callback to the eMSP's `response_url`
+# is not exercised here (needs a background task; out of scope for the
+# example).
+
+fn put_token(_req :: oroute.OcpiRequest) -> oroute.HandlerResult {
+  HOkEmpty
+}
+
+fn post_command(_req :: oroute.OcpiRequest) -> oroute.HandlerResult {
+  oroute.ok(JObj([
+    ("result",  JStr("ACCEPTED")),
+    ("timeout", JInt(30)),
+  ]))
+}
+
 # ---- Registry wiring --------------------------------------------
 
 fn registry() -> oroute.Registry {
@@ -258,6 +283,12 @@ fn registry() -> oroute.Registry {
     |> fn (r :: oroute.Registry) -> oroute.Registry {
          oroute.handler(r, oroute.get(), mid.tariffs(), get_tariffs)
        }
+    |> fn (r :: oroute.Registry) -> oroute.Registry {
+         oroute.handler(r, oroute.put(), "tokens_by_id", put_token)
+       }
+    |> fn (r :: oroute.Registry) -> oroute.Registry {
+         oroute.handler(r, oroute.post(), mid.commands(), post_command)
+       }
 }
 
 # ---- HTTP adapter ------------------------------------------------
@@ -279,11 +310,6 @@ fn handle(req :: Request) -> [time] Response {
   json_response(env.encode(result))
 }
 
-# Auth gate: every request must carry `Authorization: Token <b64>`.
-# Returns `Some(2000 envelope)` to short-circuit when absent or
-# malformed; `None` lets the request fall through to dispatch.
-# Real CPOs additionally check that the token matches one of the
-# registered eMSPs' credentials; this fixture only checks shape.
 fn check_authorization(
   headers   :: Map[Str, Str],
   timestamp :: Str
@@ -293,7 +319,7 @@ fn check_authorization(
     Some(v) => v,
   }
   match h.strip_token_prefix(authz) {
-    Some(_) => None,                                # well-formed
+    Some(_) => None,
     None    => Some(env.fail_with_data(
                       ocpi_status.client_error(),
                       "Missing or malformed Authorization header",
@@ -336,9 +362,26 @@ fn map_url_to_module(path :: Str) -> Option[RouteHit] {
     Some({ module: mid.cdrs(), params: map.new() })
   } else { if path == "/ocpi/2.2.1/tariffs" {
     Some({ module: mid.tariffs(), params: map.new() })
+  } else { if str.starts_with(path, "/ocpi/2.2.1/tokens/") {
+    # /ocpi/2.2.1/tokens/{cc}/{pid}/{uid} — the handler doesn't
+    # need the per-segment params for the dummy ack; pass the
+    # tail-path through opaquely.
+    let suffix := str.slice(path, str.len("/ocpi/2.2.1/tokens/"),
+                            str.len(path))
+    Some({
+      module: "tokens_by_id",
+      params: map.set(map.new(), "token_path", suffix),
+    })
+  } else { if str.starts_with(path, "/ocpi/2.2.1/commands/") {
+    let cmd := str.slice(path, str.len("/ocpi/2.2.1/commands/"),
+                          str.len(path))
+    Some({
+      module: mid.commands(),
+      params: map.set(map.new(), "command", cmd),
+    })
   } else {
     None
-  } } } } } } }
+  } } } } } } } } }
 }
 
 fn ocpi_request(
