@@ -35,6 +35,7 @@ import "../src/status"         as ocpi_status
 import "../src/versions"       as versions
 import "../src/module_id"      as mid
 import "../src/v221/authorize" as auth221
+import "../src/v221/cdrs"      as cdrs
 
 # ---- Static configuration ---------------------------------------
 
@@ -44,6 +45,12 @@ fn emsp_party()   -> Str { "ABC" }
 fn emsp_base_v221() -> Str {
   "http://localhost:9101/ocpi/2.2.1"
 }
+
+# The only token this fake eMSP accepts. Real eMSPs validate against
+# the registered CPO credentials database; the fixture matches a
+# single hard-coded value so the spec-required negatives (missing /
+# wrong token → 2000) are testable.
+fn valid_emsp_token() -> Str { "emsp-secret" }
 
 # ---- Demo authorize fixture --------------------------------------
 #
@@ -111,6 +118,14 @@ fn get_tariffs(_req :: oroute.OcpiRequest) -> oroute.HandlerResult {
   oroute.ok_list([demo_tariff()])
 }
 
+# CPO push CDR → eMSP. The cdr validator runs at the route gate;
+# a parseable-but-invalid body surfaces as 2001 with the violation
+# list in `data`. On a well-formed CDR we just return an empty 1000
+# envelope (real eMSPs would persist the CDR for billing).
+fn post_cdr(_req :: oroute.OcpiRequest) -> oroute.HandlerResult {
+  HOkEmpty
+}
+
 # ---- Registry wiring --------------------------------------------
 #
 # `authorize_handler` from `src/v221/authorize.lex` produces a
@@ -134,6 +149,10 @@ fn registry() -> oroute.Registry {
     |> fn (r :: oroute.Registry) -> oroute.Registry {
          oroute.handler(r, oroute.get(), mid.tariffs(), get_tariffs)
        }
+    |> fn (r :: oroute.Registry) -> oroute.Registry {
+         oroute.handler_with_schema(r, oroute.post(), mid.cdrs(),
+           cdrs.validate_cdr, post_cdr)
+       }
 }
 
 # ---- HTTP adapter -----------------------------------------------
@@ -147,14 +166,113 @@ fn json_response(body :: Str) -> Response {
 }
 
 fn handle(req :: Request) -> [time] Response {
+  let timestamp := time.now_str()
+  match check_authorization(req.headers, timestamp) {
+    Some(err) => json_response(env.encode(err)),
+    None      => match check_unsupported_version(req.path, timestamp) {
+      Some(err) => json_response(env.encode(err)),
+      None      => match check_body_parseable(req, timestamp) {
+        Some(err) => json_response(env.encode(err)),
+        None      => json_response(env.encode(dispatch_request(req, timestamp))),
+      },
+    },
+  }
+}
+
+fn dispatch_request(req :: Request, timestamp :: Str) -> env.OcpiResponse {
   let m := req.method
   let p := req.path
   let routed := match map_url_to_module(p) {
-    None        => ocpi_request(m, "unknown", p, map.new(), req),
+    None        => ocpi_request(m, "unknown",    p, map.new(),    req),
     Some(entry) => ocpi_request(m, entry.module, p, entry.params, req),
   }
-  let res := oroute.dispatch(registry(), routed, time.now_str())
-  json_response(env.encode(res))
+  oroute.dispatch(registry(), routed, timestamp)
+}
+
+# Auth gate. Three failure modes, all map to 2000:
+#   - header absent
+#   - non-`Token` scheme
+#   - `Token <wrong-value>`
+fn check_authorization(
+  headers   :: Map[Str, Str],
+  timestamp :: Str
+) -> Option[env.OcpiResponse] {
+  let authz := match map.get(headers, "authorization") {
+    None    => "",
+    Some(v) => v,
+  }
+  match h.strip_token_prefix(authz) {
+    None => Some(env.fail_with_data(
+                   ocpi_status.client_error(),
+                   "Missing or malformed Authorization header",
+                   JNull, timestamp)),
+    Some(tok) => if tok == valid_emsp_token() {
+                   None
+                 } else {
+                   Some(env.fail_with_data(
+                          ocpi_status.client_error(),
+                          "Invalid Authorization token",
+                          JNull, timestamp))
+                 },
+  }
+}
+
+# Unsupported-version gate. v2.2.1 is the only version this fixture
+# advertises; targeted hits to any other versioned module path
+# return 3002. `/ocpi/versions` discovery and bare `/ocpi/{ver}`
+# detail are exempt.
+fn check_unsupported_version(
+  path      :: Str,
+  timestamp :: Str
+) -> Option[env.OcpiResponse] {
+  if path == "/ocpi/versions" {
+    None
+  } else { if not str.starts_with(path, "/ocpi/") {
+    None
+  } else {
+    let tail := str.slice(path, str.len("/ocpi/"), str.len(path))
+    let segs := str.split(tail, "/")
+    let ver := first_segment(tail)
+    if list.len(segs) < 2 {
+      None
+    } else { if ver == versions.v221() {
+      None
+    } else {
+      Some(env.fail_with_data(
+             ocpi_status.unsupported_version(),
+             str.concat("Unsupported version: ", ver),
+             JNull, timestamp))
+    } }
+  } }
+}
+
+fn first_segment(s :: Str) -> Str {
+  match list.head(str.split(s, "/")) {
+    None      => s,
+    Some(seg) => seg,
+  }
+}
+
+# Body-shape gate. POST/PUT/PATCH with a non-empty, non-JSON body
+# returns 2001 — the same gate the fake CPO ships, so both peers
+# emit the spec-required negative shape.
+fn check_body_parseable(
+  req       :: Request,
+  timestamp :: Str
+) -> Option[env.OcpiResponse] {
+  if is_write_method(req.method) and not str.is_empty(req.body) {
+    match jv.parse(req.body) {
+      Ok(_)  => None,
+      Err(_) => Some(env.fail_with_data(
+                       ocpi_status.invalid_or_missing_parameters(),
+                       "Malformed JSON body",
+                       JNull, timestamp)),
+    }
+  } else { None }
+}
+
+fn is_write_method(m :: Str) -> Bool {
+  m == "POST" or m == "PUT" or m == "PATCH"
 }
 
 # ---- URL → (module, path_params) --------------------------------
@@ -168,6 +286,8 @@ fn map_url_to_module(path :: Str) -> Option[RouteHit] {
     Some({ module: "version_detail", params: map.new() })
   } else { if path == "/ocpi/2.2.1/tariffs" {
     Some({ module: mid.tariffs(), params: map.new() })
+  } else { if path == "/ocpi/2.2.1/cdrs" {
+    Some({ module: mid.cdrs(), params: map.new() })
   } else { if is_authorize_path(path) {
     let uid := extract_token_uid(path)
     Some({
@@ -176,7 +296,7 @@ fn map_url_to_module(path :: Str) -> Option[RouteHit] {
     })
   } else {
     None
-  } } } }
+  } } } } }
 }
 
 # `/ocpi/2.2.1/tokens/{cc}/{pid}/{uid}/authorize`
