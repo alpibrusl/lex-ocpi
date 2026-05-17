@@ -1,13 +1,13 @@
-# lex-ocpi — `RepoSchema` + migration for ocpi_sessions
+# lex-ocpi — `RepoSchema` + migration for ocpi_tokens
 #
-# Sessions describe a single charging period: when it started, the
-# token authorising it, the EVSE / connector used, and (if active)
-# running kWh / cost. CPO ships Sessions to the eMSP for live
-# status; once closed, a CDR carries the immutable billing record
-# (see `cdrs.lex`).
+# A Token represents an authorisation credential issued by an
+# eMSP to one of its drivers — typically an RFID card. The eMSP
+# pushes its token list to the CPO; the CPO uses it to authorise
+# StartTransaction at the charger.
 #
 # Indexes:
 #   - last_updated  (date-range filters on the list endpoint)
+#   - uid           (Authorize-on-demand lookup hits this column)
 #
 # Effects: [sql] for `migrate(db)`.
 
@@ -25,16 +25,16 @@ import "lex-orm/connection" as conn
 
 import "lex-orm/error" as dbe
 
-import "../v221/sessions" as sess
+import "../v221/tokens" as toks
 
 import "./migrations" as mig
 
 fn table_name() -> Str {
-  "ocpi_sessions"
+  "ocpi_tokens"
 }
 
 fn schema() -> s.ModelSchema {
-  sess.session_schema()
+  toks.token_schema()
 }
 
 fn decode(j :: jv.Json) -> Result[jv.Json, se.Errors] {
@@ -46,7 +46,7 @@ fn repo() -> q.RepoSchema {
 }
 
 fn indexes() -> List[m.DdlChange] {
-  [m.add_index("idx_ocpi_sessions_last_updated", ["last_updated"])]
+  [m.add_index("idx_ocpi_tokens_last_updated", ["last_updated"]), m.add_index("idx_ocpi_tokens_uid", ["uid"])]
 }
 
 fn migrate(db :: conn.ConnDb) -> [sql] Result[Unit, dbe.DbErr] {

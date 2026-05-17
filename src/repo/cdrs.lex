@@ -1,10 +1,9 @@
-# lex-ocpi — `RepoSchema` + migration for ocpi_sessions
+# lex-ocpi — `RepoSchema` + migration for ocpi_cdrs
 #
-# Sessions describe a single charging period: when it started, the
-# token authorising it, the EVSE / connector used, and (if active)
-# running kWh / cost. CPO ships Sessions to the eMSP for live
-# status; once closed, a CDR carries the immutable billing record
-# (see `cdrs.lex`).
+# A Cdr (Charge Detail Record) is the final, immutable billing
+# record for a completed charging session: the source of truth
+# for what the eMSP owes the CPO. CDRs ship from CPO to eMSP
+# exactly once per session.
 #
 # Indexes:
 #   - last_updated  (date-range filters on the list endpoint)
@@ -25,16 +24,16 @@ import "lex-orm/connection" as conn
 
 import "lex-orm/error" as dbe
 
-import "../v221/sessions" as sess
+import "../v221/cdrs" as cdrs
 
 import "./migrations" as mig
 
 fn table_name() -> Str {
-  "ocpi_sessions"
+  "ocpi_cdrs"
 }
 
 fn schema() -> s.ModelSchema {
-  sess.session_schema()
+  cdrs.cdr_schema()
 }
 
 fn decode(j :: jv.Json) -> Result[jv.Json, se.Errors] {
@@ -46,7 +45,7 @@ fn repo() -> q.RepoSchema {
 }
 
 fn indexes() -> List[m.DdlChange] {
-  [m.add_index("idx_ocpi_sessions_last_updated", ["last_updated"])]
+  [m.add_index("idx_ocpi_cdrs_last_updated", ["last_updated"])]
 }
 
 fn migrate(db :: conn.ConnDb) -> [sql] Result[Unit, dbe.DbErr] {

@@ -1,10 +1,8 @@
-# lex-ocpi — `RepoSchema` + migration for ocpi_sessions
+# lex-ocpi — `RepoSchema` + migration for ocpi_tariffs
 #
-# Sessions describe a single charging period: when it started, the
-# token authorising it, the EVSE / connector used, and (if active)
-# running kWh / cost. CPO ships Sessions to the eMSP for live
-# status; once closed, a CDR carries the immutable billing record
-# (see `cdrs.lex`).
+# A Tariff describes the pricing structure for a charging session
+# at a given Location/Connector. The CPO ships tariffs to the eMSP
+# so a driver app can show "this will cost X €" before plugging in.
 #
 # Indexes:
 #   - last_updated  (date-range filters on the list endpoint)
@@ -25,16 +23,16 @@ import "lex-orm/connection" as conn
 
 import "lex-orm/error" as dbe
 
-import "../v221/sessions" as sess
+import "../v221/tariffs" as tars
 
 import "./migrations" as mig
 
 fn table_name() -> Str {
-  "ocpi_sessions"
+  "ocpi_tariffs"
 }
 
 fn schema() -> s.ModelSchema {
-  sess.session_schema()
+  tars.tariff_schema()
 }
 
 fn decode(j :: jv.Json) -> Result[jv.Json, se.Errors] {
@@ -46,7 +44,7 @@ fn repo() -> q.RepoSchema {
 }
 
 fn indexes() -> List[m.DdlChange] {
-  [m.add_index("idx_ocpi_sessions_last_updated", ["last_updated"])]
+  [m.add_index("idx_ocpi_tariffs_last_updated", ["last_updated"])]
 }
 
 fn migrate(db :: conn.ConnDb) -> [sql] Result[Unit, dbe.DbErr] {
