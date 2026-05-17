@@ -1,9 +1,7 @@
 # lex-ocpi — OCPI CPO conformance harness binary (issue #10)
 #
 # Drives a CPO under test through OCPI 2.1.1 / 2.2.1 / 2.3.0
-# subsets and asserts every response is spec-shaped. The pure
-# assertions live in `src/conformance.lex`; the live HTTP loop
-# lives here.
+# subsets and asserts every response is spec-shaped.
 #
 # Entry points:
 #
@@ -12,17 +10,8 @@
 #   main_v211  — minimal cross-version suite against v2.1.1
 #   main_v230  — minimal cross-version suite against v2.3.0
 #
-# The cross-version subset runs only the cases whose URL shape
-# and response shape are identical across the three versions
-# (Versions, version_detail, Locations). Tokens-authorize and
-# Commands have spec-level URL deltas across v2.1.1 vs the others
-# and live in their own per-version cases (out of scope for the
-# subset).
-#
 # Run:
 #   lex run --allow-effects net,io,time conformance/cpo_harness.lex main
-#   lex run --allow-effects net,io,time conformance/cpo_harness.lex main_v211
-#   lex run --allow-effects net,io,time conformance/cpo_harness.lex main_v230
 
 import "std.io"   as io
 import "std.int"  as int
@@ -276,22 +265,28 @@ fn check_first_tariff_elements(data :: jv.Json) -> cc.CaseResult {
 
 # ---- Auth negative cases --------------------------------------
 
-fn assert_ocpi_2000(
-  res   :: Result[jv.Json, client.ClientError],
-  label :: Str
+fn assert_ocpi_status(
+  res     :: Result[jv.Json, client.ClientError],
+  want    :: Int,
+  label   :: Str
 ) -> cc.CaseResult {
   match res {
-    Ok(_) => CaseFail(str.concat(label, ": expected 2000, got 1000-success")),
-    Err(OcpiError(r)) => if r.status_code == 2000 {
+    Ok(_) => CaseFail(str.concat(label,
+              str.concat(": expected ", str.concat(int.to_str(want),
+                ", got 1000-success")))),
+    Err(OcpiError(r)) => if r.status_code == want {
                           CasePass
                         } else {
                           CaseFail(str.concat(label,
-                            str.concat(": expected 2000, got ",
-                              int.to_str(r.status_code))))
+                            str.concat(": expected ",
+                              str.concat(int.to_str(want),
+                                str.concat(", got ",
+                                  int.to_str(r.status_code))))))
                         },
     Err(e) => CaseFail(str.concat(label,
-                str.concat(": expected OCPI 2000, got ",
-                  cc.client_error_short(e)))),
+                str.concat(": expected OCPI ",
+                  str.concat(int.to_str(want),
+                    str.concat(", got ", cc.client_error_short(e)))))),
   }
 }
 
@@ -300,7 +295,7 @@ fn case_missing_auth_returns_2000() -> cc.Case {
     name: "GET /ocpi/versions without Authorization returns OCPI 2000",
     run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
       let req := client.base_request("GET", cc.versions_url(cfg))
-      assert_ocpi_2000(client.send(req), "missing-auth")
+      assert_ocpi_status(client.send(req), 2000, "missing-auth")
     },
   }
 }
@@ -312,7 +307,74 @@ fn case_malformed_auth_returns_2000() -> cc.Case {
       let req := http.with_header(
         client.base_request("GET", cc.versions_url(cfg)),
         "authorization", "Bearer wrong-scheme")
-      assert_ocpi_2000(client.send(req), "malformed-auth")
+      assert_ocpi_status(client.send(req), 2000, "malformed-auth")
+    },
+  }
+}
+
+# New: valid scheme, wrong token value. Spec §4.2 — receiver
+# MUST reject unrecognized credentials with a 2000-class envelope.
+fn case_wrong_token_returns_2000() -> cc.Case {
+  {
+    name: "GET /ocpi/versions with wrong Token value returns OCPI 2000",
+    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+      assert_ocpi_status(
+        client.get_with_token(cc.versions_url(cfg), "wrong-secret"),
+        2000, "wrong-token")
+    },
+  }
+}
+
+# ---- Spec-required negative paths ----------------------------
+#
+# Three new spec-shape cases beyond the auth gate:
+#   1. Unknown version segment → 3002 ("Unknown / Unsupported version")
+#   2. Malformed JSON body on a write → 2001
+#   3. Credentials POST happy path → 1000 (echoed credentials body)
+
+fn case_unsupported_version_returns_3002() -> cc.Case {
+  {
+    name: "GET /ocpi/9.9.9/locations returns OCPI 3002 (unsupported version)",
+    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+      let url := str.concat(cfg.base_url, "/9.9.9/locations")
+      assert_ocpi_status(client.get_with_token(url, cfg.token),
+                         3002, "unsupported-version")
+    },
+  }
+}
+
+fn case_malformed_json_returns_2001() -> cc.Case {
+  {
+    name: "POST /ocpi/2.2.1/commands/START_SESSION with malformed JSON returns 2001",
+    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+      let url := str.concat(cc.module_url(cfg, "commands"), "/START_SESSION")
+      assert_ocpi_status(
+        client.post_json(url, "{ not valid json", cfg.token),
+        2001, "malformed-json")
+    },
+  }
+}
+
+fn case_credentials_post_returns_ok() -> cc.Case {
+  {
+    name: "POST /ocpi/2.2.1/credentials returns 1000 envelope (handshake)",
+    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+      let body := jv.stringify(JObj([
+        ("token", JStr("emsp-secret")),
+        ("url",   JStr("http://localhost:9101/ocpi/versions")),
+        ("roles", JList([
+          JObj([
+            ("role",             JStr("EMSP")),
+            ("business_details", JObj([("name", JStr("Example eMSP"))])),
+            ("country_code",     JStr("DE")),
+            ("party_id",         JStr("ABC")),
+          ]),
+        ])),
+      ]))
+      match client.post_json(cc.module_url(cfg, "credentials"), body, cfg.token) {
+        Ok(_)  => CasePass,
+        Err(e) => CaseFail(cc.client_error_short(e)),
+      }
     },
   }
 }
@@ -377,7 +439,6 @@ fn check_command_result(data :: jv.Json, want :: Str) -> cc.CaseResult {
 
 # ---- Suites ---------------------------------------------------
 
-# Full v2.2.1 surface: everything exercisable against the fake CPO.
 fn suite_v221() -> List[cc.Case] {
   [
     case_versions_returns_ok(),
@@ -395,15 +456,15 @@ fn suite_v221() -> List[cc.Case] {
     case_first_tariff_has_elements(),
     case_missing_auth_returns_2000(),
     case_malformed_auth_returns_2000(),
+    case_wrong_token_returns_2000(),
+    case_unsupported_version_returns_3002(),
+    case_malformed_json_returns_2001(),
+    case_credentials_post_returns_ok(),
     case_put_token_returns_ok(),
     case_post_command_returns_accepted(),
   ]
 }
 
-# Cross-version subset: cases whose URL shape + response shape are
-# identical across v2.1.1 / v2.2.1 / v2.3.0. Sessions / CDRs /
-# Tariffs / Tokens / Commands have per-version URL deltas and
-# don't fit — those need version-specific case suites if needed.
 fn suite_cross_version() -> List[cc.Case] {
   [
     case_versions_returns_ok(),
