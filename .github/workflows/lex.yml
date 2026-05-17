@@ -37,8 +37,6 @@ jobs:
         run: |
           set -euo pipefail
           ARCHIVE="lex-${LEX_VERSION}-${LEX_TARGET}.tar.gz"
-          # --retry handles transient release-CDN propagation hiccups
-          # right after a fresh tag is pushed (we hit one on v0.9.5).
           curl -sSfL --retry 5 --retry-delay 3 --retry-all-errors \
             "https://github.com/alpibrusl/lex-lang/releases/download/${LEX_VERSION}/${ARCHIVE}" \
             -o "${ARCHIVE}"
@@ -74,22 +72,24 @@ jobs:
           JSON=$(jq -R -s . < /tmp/schema.json)
           lex run tools/gen.lex generate "$JSON" | grep -q 'fn heartbeat_schema'
 
-      - name: Smoke-test the CPO example
+      - name: Conformance harness against the fake CPO example
         working-directory: lex-ocpi
         run: |
-          set -euo pipefail
+          set -uo pipefail
+          # Start the fake CPO server in the background.
           lex run --allow-effects net,io,time examples/cpo_v221.lex main &
           SERVER_PID=$!
+          # Kill the server on any exit (success, failure, or signal).
+          trap 'kill ${SERVER_PID} 2>/dev/null || true' EXIT
           # Poll until the server is up (max 5s).
           for i in $(seq 1 50); do
-            if curl -sf http://localhost:9100/ocpi/versions > /tmp/versions.json; then
+            if curl -sf http://localhost:9100/ocpi/versions > /dev/null; then
               break
             fi
             sleep 0.1
           done
-          grep -q '"status_code":1000' /tmp/versions.json
-          curl -sf http://localhost:9100/ocpi/2.2.1/locations/LOC1 \
-            | grep -q '"country_code":"NL"'
-          curl -sf http://localhost:9100/ocpi/2.2.1/locations/LOC9 \
-            | grep -q '"status_code":2003'
-          kill $SERVER_PID 2>/dev/null || true
+          # Run the conformance harness against it. `time` is in the
+          # allow-list because src/client.lex's retry helpers carry
+          # `[time]` — the harness doesn't call them, but lex's
+          # effect checker scans every transitively-imported function.
+          lex run --allow-effects net,io,time conformance/cpo_harness.lex main
