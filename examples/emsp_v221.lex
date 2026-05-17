@@ -162,6 +162,28 @@ fn get_tariffs(_req :: oroute.OcpiRequest) -> oroute.HandlerResult {
   oroute.ok_list([demo_tariff()])
 }
 
+# eMSP-as-sender: the Tokens module spec places the eMSP on the
+# sender side. CPOs GET /tokens to refresh their local token cache.
+# A minimal-but-spec-shaped Token entry satisfies the validator on
+# the receiver side.
+fn demo_token() -> jv.Json {
+  JObj([
+    ("country_code", JStr(emsp_country())),
+    ("party_id",     JStr(emsp_party())),
+    ("uid",          JStr("RFID-A")),
+    ("type",         JStr("RFID")),
+    ("contract_id",  JStr("DE-ABC-C12345-T")),
+    ("issuer",       JStr("Example eMSP")),
+    ("valid",        JBool(true)),
+    ("whitelist",    JStr("ALWAYS")),
+    ("last_updated", JStr("2026-05-15T10:00:00Z")),
+  ])
+}
+
+fn get_tokens(_req :: oroute.OcpiRequest) -> oroute.HandlerResult {
+  oroute.ok_list([demo_token()])
+}
+
 # CPO push CDR → eMSP. The cdr validator runs at the route gate;
 # a parseable-but-invalid body surfaces as 2001 with the violation
 # list in `data`. On a well-formed CDR we just return an empty 1000
@@ -196,6 +218,9 @@ fn registry() -> oroute.Registry {
     |> fn (r :: oroute.Registry) -> oroute.Registry {
          oroute.handler_with_schema(r, oroute.post(), mid.cdrs(),
            cdrs.validate_cdr, post_cdr)
+       }
+    |> fn (r :: oroute.Registry) -> oroute.Registry {
+         oroute.handler(r, oroute.get(), mid.tokens(), get_tokens)
        }
 }
 
@@ -369,6 +394,8 @@ fn map_url_to_module(path :: Str) -> Option[RouteHit] {
     Some({ module: mid.tariffs(), params: map.new() })
   } else { if path == "/ocpi/2.2.1/cdrs" {
     Some({ module: mid.cdrs(), params: map.new() })
+  } else { if path == "/ocpi/2.2.1/tokens" {
+    Some({ module: mid.tokens(), params: map.new() })
   } else { if is_authorize_path(path) {
     let uid := extract_token_uid(path)
     Some({
@@ -377,7 +404,7 @@ fn map_url_to_module(path :: Str) -> Option[RouteHit] {
     })
   } else {
     None
-  } } } } }
+  } } } } } }
 }
 
 # `/ocpi/2.2.1/tokens/{cc}/{pid}/{uid}/authorize`

@@ -40,7 +40,7 @@ import "./case" as cc
 fn case_versions_returns_ok() -> cc.Case {
   {
     name: "GET /ocpi/versions returns 1000 envelope",
-    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+    run: fn (cfg :: cc.TargetConfig) -> [net, proc] cc.CaseResult {
       match client.get_with_token(cc.versions_url(cfg), cfg.token) {
         Ok(_)  => CasePass,
         Err(e) => CaseFail(cc.client_error_short(e)),
@@ -52,7 +52,7 @@ fn case_versions_returns_ok() -> cc.Case {
 fn case_version_detail_returns_ok() -> cc.Case {
   {
     name: "GET /ocpi/2.2.1 returns 1000 envelope (version detail)",
-    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+    run: fn (cfg :: cc.TargetConfig) -> [net, proc] cc.CaseResult {
       match client.get_with_token(cc.version_detail_url(cfg), cfg.token) {
         Ok(_)  => CasePass,
         Err(e) => CaseFail(cc.client_error_short(e)),
@@ -84,7 +84,7 @@ fn check_allowed_value(data :: jv.Json, want :: Str) -> cc.CaseResult {
 fn case_authorize_allowed() -> cc.Case {
   {
     name: "POST /tokens/NL/EXM/RFID-A/authorize returns ALLOWED",
-    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+    run: fn (cfg :: cc.TargetConfig) -> [net, proc] cc.CaseResult {
       match client.post_json(authorize_url(cfg, "RFID-A"), "{}", cfg.token) {
         Err(e)   => CaseFail(cc.client_error_short(e)),
         Ok(data) => check_allowed_value(data, "ALLOWED"),
@@ -96,7 +96,7 @@ fn case_authorize_allowed() -> cc.Case {
 fn case_authorize_blocked() -> cc.Case {
   {
     name: "POST /tokens/NL/EXM/RFID-C/authorize returns BLOCKED",
-    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+    run: fn (cfg :: cc.TargetConfig) -> [net, proc] cc.CaseResult {
       match client.post_json(authorize_url(cfg, "RFID-C"), "{}", cfg.token) {
         Err(e)   => CaseFail(cc.client_error_short(e)),
         Ok(data) => check_allowed_value(data, "BLOCKED"),
@@ -108,7 +108,7 @@ fn case_authorize_blocked() -> cc.Case {
 fn case_authorize_not_allowed() -> cc.Case {
   {
     name: "POST /tokens/NL/EXM/UNKNOWN/authorize returns NOT_ALLOWED",
-    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+    run: fn (cfg :: cc.TargetConfig) -> [net, proc] cc.CaseResult {
       match client.post_json(authorize_url(cfg, "UNKNOWN"), "{}", cfg.token) {
         Err(e)   => CaseFail(cc.client_error_short(e)),
         Ok(data) => check_allowed_value(data, "NOT_ALLOWED"),
@@ -120,7 +120,7 @@ fn case_authorize_not_allowed() -> cc.Case {
 fn case_tariffs_list_returns_ok() -> cc.Case {
   {
     name: "GET /ocpi/2.2.1/tariffs returns 1000 envelope",
-    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+    run: fn (cfg :: cc.TargetConfig) -> [net, proc] cc.CaseResult {
       match client.get_with_token(cc.module_url(cfg, "tariffs"), cfg.token) {
         Ok(_)  => CasePass,
         Err(e) => CaseFail(cc.client_error_short(e)),
@@ -158,7 +158,7 @@ fn assert_ocpi_status(
 fn case_missing_auth_returns_2000() -> cc.Case {
   {
     name: "GET /ocpi/versions without Authorization returns OCPI 2000",
-    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+    run: fn (cfg :: cc.TargetConfig) -> [net, proc] cc.CaseResult {
       assert_ocpi_status(
         client.send(client.base_request("GET", cc.versions_url(cfg))),
         2000, "missing-auth")
@@ -169,7 +169,7 @@ fn case_missing_auth_returns_2000() -> cc.Case {
 fn case_wrong_token_returns_2000() -> cc.Case {
   {
     name: "GET /ocpi/versions with wrong Token value returns OCPI 2000",
-    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+    run: fn (cfg :: cc.TargetConfig) -> [net, proc] cc.CaseResult {
       assert_ocpi_status(
         client.get_with_token(cc.versions_url(cfg), "wrong-secret"),
         2000, "wrong-token")
@@ -180,7 +180,7 @@ fn case_wrong_token_returns_2000() -> cc.Case {
 fn case_unsupported_version_returns_3002() -> cc.Case {
   {
     name: "GET /ocpi/9.9.9/tariffs returns OCPI 3002 (unsupported version)",
-    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+    run: fn (cfg :: cc.TargetConfig) -> [net, proc] cc.CaseResult {
       let url := str.concat(cfg.base_url, "/9.9.9/tariffs")
       assert_ocpi_status(client.get_with_token(url, cfg.token),
                          3002, "unsupported-version")
@@ -243,7 +243,7 @@ fn happy_cdr_body() -> Str {
 fn case_post_cdr_returns_ok() -> cc.Case {
   {
     name: "POST /ocpi/2.2.1/cdrs with valid body returns 1000",
-    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+    run: fn (cfg :: cc.TargetConfig) -> [net, proc] cc.CaseResult {
       match client.post_json(cc.module_url(cfg, "cdrs"),
                              happy_cdr_body(), cfg.token) {
         Ok(_)  => CasePass,
@@ -256,10 +256,54 @@ fn case_post_cdr_returns_ok() -> cc.Case {
 fn case_post_cdr_invalid_returns_2001() -> cc.Case {
   {
     name: "POST /ocpi/2.2.1/cdrs with empty object returns OCPI 2001",
-    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+    run: fn (cfg :: cc.TargetConfig) -> [net, proc] cc.CaseResult {
       assert_ocpi_status(
         client.post_json(cc.module_url(cfg, "cdrs"), "{}", cfg.token),
         2001, "cdr-missing-fields")
+    },
+  }
+}
+
+# ---- eMSP-as-sender: GET /tokens ------------------------------
+#
+# The Tokens module spec places the eMSP on the sender side: CPOs
+# GET /tokens periodically to refresh their local cache. These
+# cases drive the eMSP as sender from the harness's CPO-like
+# vantage point.
+
+fn case_tokens_list_returns_ok() -> cc.Case {
+  {
+    name: "GET /ocpi/2.2.1/tokens returns 1000 envelope (eMSP as sender)",
+    run: fn (cfg :: cc.TargetConfig) -> [net, proc] cc.CaseResult {
+      match client.get_with_token(cc.module_url(cfg, "tokens"), cfg.token) {
+        Ok(_)  => CasePass,
+        Err(e) => CaseFail(cc.client_error_short(e)),
+      }
+    },
+  }
+}
+
+fn case_tokens_list_first_has_uid() -> cc.Case {
+  {
+    name: "GET /ocpi/2.2.1/tokens first entry has `uid`",
+    run: fn (cfg :: cc.TargetConfig) -> [net, proc] cc.CaseResult {
+      match client.get_with_token(cc.module_url(cfg, "tokens"), cfg.token) {
+        Err(e)   => CaseFail(cc.client_error_short(e)),
+        Ok(data) => check_first_has_field(data, "uid"),
+      }
+    },
+  }
+}
+
+fn check_first_has_field(data :: jv.Json, field :: Str) -> cc.CaseResult {
+  match jv.as_list(data) {
+    None    => CaseFail("data is not a list"),
+    Some(l) => match list.head(l) {
+      None    => CaseFail("data list is empty"),
+      Some(first) => match jv.get_field(first, field) {
+        None    => CaseFail(str.concat("first entry missing field: ", field)),
+        Some(_) => CasePass,
+      },
     },
   }
 }
@@ -279,6 +323,8 @@ fn suite() -> List[cc.Case] {
     case_unsupported_version_returns_3002(),
     case_post_cdr_returns_ok(),
     case_post_cdr_invalid_returns_2001(),
+    case_tokens_list_returns_ok(),
+    case_tokens_list_first_has_uid(),
   ]
 }
 
@@ -288,7 +334,7 @@ fn default_target() -> cc.TargetConfig {
     version:  "2.2.1" }
 }
 
-fn main() -> [net, io] Int {
+fn main() -> [net, io, proc] Int {
   let cfg := default_target()
   let summary := cc.run_suite(suite(), cfg)
   let _ := io.print("=== lex-ocpi eMSP conformance harness ===")
@@ -302,7 +348,7 @@ fn main() -> [net, io] Int {
 # the per-case breakdown + counts; useful for CI dashboards that
 # parse stdout. Exit code matches `main`: non-zero iff any case
 # failed.
-fn main_json() -> [net, io] Int {
+fn main_json() -> [net, io, proc] Int {
   let cfg := default_target()
   let summary := cc.run_suite(suite(), cfg)
   let _ := io.print(cc.to_json_str(summary))

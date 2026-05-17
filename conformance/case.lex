@@ -5,7 +5,7 @@
 # of cases plus a `main` that runs them. This file owns the small
 # type vocabulary they share so the two harnesses don't drift.
 #
-# Effects on `run`: `[net]`. Harnesses that need more (`[time]` for
+# Effects on `run`: `[net, proc]`. Harnesses that need more (`[time]` for
 # wall-clock-sensitive cases, `[concurrent]` for race scenarios)
 # widen the row at their main entry point.
 
@@ -55,10 +55,10 @@ type CaseResult =
 
 type Case = {
   name :: Str,
-  run  :: (TargetConfig) -> [net] CaseResult,
+  run  :: (TargetConfig) -> [net, proc] CaseResult,
 }
 
-fn run_case(c :: Case, cfg :: TargetConfig) -> [net] CaseResult {
+fn run_case(c :: Case, cfg :: TargetConfig) -> [net, proc] CaseResult {
   (c.run)(cfg)
 }
 
@@ -71,7 +71,7 @@ fn run_case(c :: Case, cfg :: TargetConfig) -> [net] CaseResult {
 fn expect_fail(c :: Case) -> Case {
   {
     name: str.concat("[expect-fail] ", c.name),
-    run: fn (cfg :: TargetConfig) -> [net] CaseResult {
+    run: fn (cfg :: TargetConfig) -> [net, proc] CaseResult {
       match (c.run)(cfg) {
         CaseFail(_) => CasePass,
         CasePass    => CaseFail("expected underlying case to fail, but it passed"),
@@ -108,7 +108,7 @@ type CaseRecord = {
 #
 # Single-pass over the case list — std.list in lex 0.9.5 has no
 # `zip`, so the harness folds cases and results together in one
-# walk. Each iteration runs the case under [net] and accumulates
+# walk. Each iteration runs the case under [net, proc] and accumulates
 # into the running summary.
 
 type Summary = {
@@ -123,9 +123,9 @@ fn empty_summary() -> Summary {
   { passed: 0, failed: 0, skipped: 0, total: 0, records: [] }
 }
 
-fn run_suite(cases :: List[Case], cfg :: TargetConfig) -> [net] Summary {
+fn run_suite(cases :: List[Case], cfg :: TargetConfig) -> [net, proc] Summary {
   list.fold(cases, empty_summary(),
-    fn (acc :: Summary, c :: Case) -> [net] Summary {
+    fn (acc :: Summary, c :: Case) -> [net, proc] Summary {
       let r := run_case(c, cfg)
       accumulate(acc, c.name, r)
     })
