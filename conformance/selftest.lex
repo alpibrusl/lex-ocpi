@@ -45,7 +45,7 @@ fn suite() -> List[cc.Case] {
   ]
 }
 
-fn main() -> [net, io] Int {
+fn main() -> [net, io, proc] Int {
   let summary := cc.run_suite(suite(), buggy_target())
   let _ := io.print("=== lex-ocpi harness self-test (against buggy CPO) ===")
   let _ := list.map(cc.text_lines(summary),

@@ -20,6 +20,7 @@ import "std.map"   as map
 import "std.str"   as str
 import "std.http"  as http
 import "std.bytes" as bytes
+import "std.proc"  as proc
 
 import "lex-schema/json_value" as jv
 
@@ -33,7 +34,7 @@ import "./case" as cc
 fn case_versions_returns_ok() -> cc.Case {
   {
     name: "GET /ocpi/versions returns 1000 envelope",
-    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+    run: fn (cfg :: cc.TargetConfig) -> [net, proc] cc.CaseResult {
       match client.get_with_token(cc.versions_url(cfg), cfg.token) {
         Ok(_)  => CasePass,
         Err(e) => CaseFail(cc.client_error_short(e)),
@@ -45,7 +46,7 @@ fn case_versions_returns_ok() -> cc.Case {
 fn case_versions_data_is_list() -> cc.Case {
   {
     name: "GET /ocpi/versions data is a non-empty list",
-    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+    run: fn (cfg :: cc.TargetConfig) -> [net, proc] cc.CaseResult {
       match client.get_with_token(cc.versions_url(cfg), cfg.token) {
         Err(e)   => CaseFail(cc.client_error_short(e)),
         Ok(data) => match data {
@@ -64,7 +65,7 @@ fn case_versions_data_is_list() -> cc.Case {
 fn case_version_detail_returns_ok() -> cc.Case {
   {
     name: "GET /ocpi/{version} returns 1000 envelope (version detail)",
-    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+    run: fn (cfg :: cc.TargetConfig) -> [net, proc] cc.CaseResult {
       match client.get_with_token(cc.version_detail_url(cfg), cfg.token) {
         Ok(_)  => CasePass,
         Err(e) => CaseFail(cc.client_error_short(e)),
@@ -76,7 +77,7 @@ fn case_version_detail_returns_ok() -> cc.Case {
 fn case_locations_list_returns_ok() -> cc.Case {
   {
     name: "GET /ocpi/{version}/locations returns 1000 envelope",
-    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+    run: fn (cfg :: cc.TargetConfig) -> [net, proc] cc.CaseResult {
       match client.get_with_token(cc.module_url(cfg, "locations"), cfg.token) {
         Ok(_)  => CasePass,
         Err(e) => CaseFail(cc.client_error_short(e)),
@@ -88,7 +89,7 @@ fn case_locations_list_returns_ok() -> cc.Case {
 fn case_location_known_has_country_code() -> cc.Case {
   {
     name: "GET /ocpi/{version}/locations/LOC1 has country_code = NL",
-    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+    run: fn (cfg :: cc.TargetConfig) -> [net, proc] cc.CaseResult {
       let url := cc.module_item_url(cfg, "locations", "LOC1")
       match client.get_with_token(url, cfg.token) {
         Err(e)   => CaseFail(cc.client_error_short(e)),
@@ -116,7 +117,7 @@ fn check_country_code(data :: jv.Json, want :: Str) -> cc.CaseResult {
 fn case_location_known_has_evses() -> cc.Case {
   {
     name: "GET /ocpi/{version}/locations/LOC1 has non-empty `evses` array",
-    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+    run: fn (cfg :: cc.TargetConfig) -> [net, proc] cc.CaseResult {
       let url := cc.module_item_url(cfg, "locations", "LOC1")
       match client.get_with_token(url, cfg.token) {
         Err(e)   => CaseFail(cc.client_error_short(e)),
@@ -143,7 +144,7 @@ fn check_has_non_empty_list(data :: jv.Json, field :: Str) -> cc.CaseResult {
 fn case_location_unknown_returns_2003() -> cc.Case {
   {
     name: "GET /ocpi/{version}/locations/LOC9 returns OCPI 2003",
-    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+    run: fn (cfg :: cc.TargetConfig) -> [net, proc] cc.CaseResult {
       let url := cc.module_item_url(cfg, "locations", "LOC9")
       match client.get_with_token(url, cfg.token) {
         Ok(_) => CaseFail("expected 2003, got 1000-success envelope"),
@@ -163,7 +164,7 @@ fn case_location_unknown_returns_2003() -> cc.Case {
 fn case_unknown_path_returns_2000() -> cc.Case {
   {
     name: "GET /ocpi/wat returns OCPI 2000 (unknown route)",
-    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+    run: fn (cfg :: cc.TargetConfig) -> [net, proc] cc.CaseResult {
       let url := str.concat(cfg.base_url, "/wat")
       match client.get_with_token(url, cfg.token) {
         Ok(_) => CaseFail("expected 2000, got 1000-success envelope"),
@@ -183,7 +184,7 @@ fn case_unknown_path_returns_2000() -> cc.Case {
 fn case_sessions_list_returns_ok() -> cc.Case {
   {
     name: "GET /ocpi/2.2.1/sessions returns 1000 envelope",
-    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+    run: fn (cfg :: cc.TargetConfig) -> [net, proc] cc.CaseResult {
       match client.get_with_token(cc.module_url(cfg, "sessions"), cfg.token) {
         Ok(_)  => CasePass,
         Err(e) => CaseFail(cc.client_error_short(e)),
@@ -195,7 +196,7 @@ fn case_sessions_list_returns_ok() -> cc.Case {
 fn case_cdrs_list_returns_ok() -> cc.Case {
   {
     name: "GET /ocpi/2.2.1/cdrs returns 1000 envelope",
-    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+    run: fn (cfg :: cc.TargetConfig) -> [net, proc] cc.CaseResult {
       match client.get_with_token(cc.module_url(cfg, "cdrs"), cfg.token) {
         Ok(_)  => CasePass,
         Err(e) => CaseFail(cc.client_error_short(e)),
@@ -207,7 +208,7 @@ fn case_cdrs_list_returns_ok() -> cc.Case {
 fn case_tariffs_list_returns_ok() -> cc.Case {
   {
     name: "GET /ocpi/2.2.1/tariffs returns 1000 envelope",
-    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+    run: fn (cfg :: cc.TargetConfig) -> [net, proc] cc.CaseResult {
       match client.get_with_token(cc.module_url(cfg, "tariffs"), cfg.token) {
         Ok(_)  => CasePass,
         Err(e) => CaseFail(cc.client_error_short(e)),
@@ -219,7 +220,7 @@ fn case_tariffs_list_returns_ok() -> cc.Case {
 fn case_first_cdr_has_total_cost() -> cc.Case {
   {
     name: "GET /ocpi/2.2.1/cdrs first entry has total_cost.excl_vat",
-    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+    run: fn (cfg :: cc.TargetConfig) -> [net, proc] cc.CaseResult {
       match client.get_with_token(cc.module_url(cfg, "cdrs"), cfg.token) {
         Err(e)   => CaseFail(cc.client_error_short(e)),
         Ok(data) => check_first_cdr_total_cost(data),
@@ -247,7 +248,7 @@ fn check_first_cdr_total_cost(data :: jv.Json) -> cc.CaseResult {
 fn case_first_tariff_has_elements() -> cc.Case {
   {
     name: "GET /ocpi/2.2.1/tariffs first entry has non-empty `elements`",
-    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+    run: fn (cfg :: cc.TargetConfig) -> [net, proc] cc.CaseResult {
       match client.get_with_token(cc.module_url(cfg, "tariffs"), cfg.token) {
         Err(e)   => CaseFail(cc.client_error_short(e)),
         Ok(data) => check_first_tariff_elements(data),
@@ -296,7 +297,7 @@ fn assert_ocpi_status(
 fn case_missing_auth_returns_2000() -> cc.Case {
   {
     name: "GET /ocpi/versions without Authorization returns OCPI 2000",
-    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+    run: fn (cfg :: cc.TargetConfig) -> [net, proc] cc.CaseResult {
       let req := client.base_request("GET", cc.versions_url(cfg))
       assert_ocpi_status(client.send(req), 2000, "missing-auth")
     },
@@ -306,7 +307,7 @@ fn case_missing_auth_returns_2000() -> cc.Case {
 fn case_malformed_auth_returns_2000() -> cc.Case {
   {
     name: "GET /ocpi/versions with Bearer auth returns OCPI 2000",
-    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+    run: fn (cfg :: cc.TargetConfig) -> [net, proc] cc.CaseResult {
       let req := http.with_header(
         client.base_request("GET", cc.versions_url(cfg)),
         "authorization", "Bearer wrong-scheme")
@@ -320,7 +321,7 @@ fn case_malformed_auth_returns_2000() -> cc.Case {
 fn case_wrong_token_returns_2000() -> cc.Case {
   {
     name: "GET /ocpi/versions with wrong Token value returns OCPI 2000",
-    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+    run: fn (cfg :: cc.TargetConfig) -> [net, proc] cc.CaseResult {
       assert_ocpi_status(
         client.get_with_token(cc.versions_url(cfg), "wrong-secret"),
         2000, "wrong-token")
@@ -338,7 +339,7 @@ fn case_wrong_token_returns_2000() -> cc.Case {
 fn case_unsupported_version_returns_3002() -> cc.Case {
   {
     name: "GET /ocpi/9.9.9/locations returns OCPI 3002 (unsupported version)",
-    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+    run: fn (cfg :: cc.TargetConfig) -> [net, proc] cc.CaseResult {
       let url := str.concat(cfg.base_url, "/9.9.9/locations")
       assert_ocpi_status(client.get_with_token(url, cfg.token),
                          3002, "unsupported-version")
@@ -349,7 +350,7 @@ fn case_unsupported_version_returns_3002() -> cc.Case {
 fn case_malformed_json_returns_2001() -> cc.Case {
   {
     name: "POST /ocpi/2.2.1/commands/START_SESSION with malformed JSON returns 2001",
-    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+    run: fn (cfg :: cc.TargetConfig) -> [net, proc] cc.CaseResult {
       let url := str.concat(cc.module_url(cfg, "commands"), "/START_SESSION")
       assert_ocpi_status(
         client.post_json(url, "{ not valid json", cfg.token),
@@ -361,7 +362,7 @@ fn case_malformed_json_returns_2001() -> cc.Case {
 fn case_credentials_post_returns_ok() -> cc.Case {
   {
     name: "POST /ocpi/2.2.1/credentials returns 1000 envelope (handshake)",
-    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+    run: fn (cfg :: cc.TargetConfig) -> [net, proc] cc.CaseResult {
       let body := jv.stringify(JObj([
         ("token", JStr("emsp-secret")),
         ("url",   JStr("http://localhost:9101/ocpi/versions")),
@@ -389,7 +390,7 @@ fn case_credentials_post_returns_ok() -> cc.Case {
 fn case_credentials_missing_field_returns_2001() -> cc.Case {
   {
     name: "POST /ocpi/2.2.1/credentials without `token` returns OCPI 2001",
-    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+    run: fn (cfg :: cc.TargetConfig) -> [net, proc] cc.CaseResult {
       let body := jv.stringify(JObj([
         ("url",   JStr("http://localhost:9101/ocpi/versions")),
         ("roles", JList([
@@ -409,12 +410,101 @@ fn case_credentials_missing_field_returns_2001() -> cc.Case {
 }
 
 # ---- CPO-as-receiver: Tokens PUT + Commands POST ---------------
+#
+# std.http's `send` rejects PUT requests under lex 0.9.5 — every
+# call returns Err regardless of body shape. Until the upstream
+# fix lands, the harness shells out to `curl` via `std.proc.spawn`
+# for the PUT cases. Server-side correctness is fully exercised;
+# only the client codepath swaps.
 
+type CurlResult = {
+  status :: Int,
+  body   :: jv.Json,
+}
+
+fn put_via_curl(url :: Str, token :: Str, body :: Str) -> [proc] Result[CurlResult, Str] {
+  match proc.spawn("curl", [
+    "-sS", "-X", "PUT",
+    "-H", str.concat("Authorization: Token ", token),
+    "-H", "content-type: application/json",
+    "-w", "\n%{http_code}",
+    "-d", body,
+    url,
+  ]) {
+    Err(m) => Err(str.concat("curl spawn: ", m)),
+    Ok(r)  => if r.exit_code == 0 { parse_curl_output(r.stdout) }
+              else { Err(str.concat("curl exit ", int.to_str(r.exit_code))) },
+  }
+}
+
+# curl's `-w "\n%{http_code}"` appends the HTTP status as a trailing
+# line. Split it off so the body parses cleanly as JSON.
+fn parse_curl_output(out :: Str) -> Result[CurlResult, Str] {
+  let parts := str.split(out, "\n")
+  let n     := list.len(parts)
+  if n < 2 { Err("curl output: no status code line") }
+  else {
+    let status_str := match list.head(list.reverse(parts)) {
+      None    => "",
+      Some(s) => s,
+    }
+    let body_lines := list_drop_last(parts)
+    let body_str   := str.join(body_lines, "\n")
+    match str.to_int(status_str) {
+      None        => Err(str.concat("curl status not an int: ", status_str)),
+      Some(code)  => match jv.parse(body_str) {
+        Err(pe) => Err(str.concat("curl body not JSON: ", pe.message)),
+        Ok(j)   => Ok({ status: code, body: j }),
+      },
+    }
+  }
+}
+
+fn list_drop_last(xs :: List[Str]) -> List[Str] {
+  list_take(xs, list.len(xs) - 1)
+}
+
+fn list_take(xs :: List[Str], n :: Int) -> List[Str] {
+  if n <= 0 { [] }
+  else { match list.head(xs) {
+    None    => [],
+    Some(h) => list.concat([h], list_take(list.tail(xs), n - 1)),
+  } }
+}
+
+# Real PUT through curl. The fake CPO's `put_token` handler returns
+# `HOkEmpty` (1000 with null data); the case asserts on the OCPI
+# status_code rather than the body shape.
 fn case_put_token_returns_ok() -> cc.Case {
   {
-    name: "PUT /ocpi/2.2.1/tokens/DE/ABC/RFID-A returns 1000 envelope",
-    run: fn (_cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
-      CaseSkip("std.http PUT broken under lex 0.9.5 — server route wired, client can't reach it")
+    name: "PUT /ocpi/2.2.1/tokens/DE/ABC/RFID-A returns 1000 envelope (via curl)",
+    run: fn (cfg :: cc.TargetConfig) -> [net, proc] cc.CaseResult {
+      let url := str.concat(cc.module_url(cfg, "tokens"),
+                  "/DE/ABC/RFID-A")
+      let body := jv.stringify(JObj([
+        ("uid",          JStr("RFID-A")),
+        ("type",         JStr("RFID")),
+        ("contract_id",  JStr("DE-ABC-C12345-T")),
+        ("issuer",       JStr("Example Issuer")),
+        ("valid",        JBool(true)),
+        ("whitelist",    JStr("ALWAYS")),
+        ("last_updated", JStr("2026-05-15T10:00:00Z")),
+      ]))
+      match put_via_curl(url, cfg.token, body) {
+        Err(m)   => CaseFail(m),
+        Ok(resp) => check_envelope_ok(resp.body),
+      }
+    },
+  }
+}
+
+fn check_envelope_ok(body :: jv.Json) -> cc.CaseResult {
+  match jv.get_field(body, "status_code") {
+    None    => CaseFail("envelope missing `status_code`"),
+    Some(v) => match jv.as_int(v) {
+      None    => CaseFail("`status_code` not an int"),
+      Some(n) => if n >= 1000 and n < 2000 { CasePass }
+                 else { CaseFail(str.concat("status_code=", int.to_str(n))) },
     },
   }
 }
@@ -441,7 +531,7 @@ fn start_session_body() -> Str {
 fn case_post_command_returns_accepted() -> cc.Case {
   {
     name: "POST /ocpi/2.2.1/commands/START_SESSION returns ACCEPTED",
-    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+    run: fn (cfg :: cc.TargetConfig) -> [net, proc] cc.CaseResult {
       match client.post_json(command_url(cfg, "START_SESSION"),
                              start_session_body(), cfg.token) {
         Err(e)   => CaseFail(cc.client_error_short(e)),
@@ -462,7 +552,7 @@ fn callback_recorder_url() -> Str { "http://localhost:9101/callback" }
 fn case_command_callback_arrives() -> cc.Case {
   {
     name: "POST /commands/START_SESSION delivers CommandResult to response_url",
-    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+    run: fn (cfg :: cc.TargetConfig) -> [net, proc] cc.CaseResult {
       let body := jv.stringify(JObj([
         ("response_url", JStr(callback_recorder_url())),
         ("token",        JObj([
@@ -485,7 +575,7 @@ fn case_command_callback_arrives() -> cc.Case {
   }
 }
 
-fn check_recorder_has_accepted_result() -> [net] cc.CaseResult {
+fn check_recorder_has_accepted_result() -> [net, proc] cc.CaseResult {
   match raw_get(callback_recorder_url(), "any") {
     Err(m) => CaseFail(str.concat("recorder GET: ", m)),
     Ok(resp) => match jv.get_field(resp.body, "data") {
@@ -555,7 +645,7 @@ fn raw_get(url :: Str, token :: Str) -> [net] Result[RawResponse, Str] {
 fn case_locations_emits_x_total_count() -> cc.Case {
   {
     name: "GET /ocpi/2.2.1/locations carries X-Total-Count: 6",
-    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+    run: fn (cfg :: cc.TargetConfig) -> [net, proc] cc.CaseResult {
       match raw_get(cc.module_url(cfg, "locations"), cfg.token) {
         Err(m)   => CaseFail(m),
         Ok(resp) => expect_header_eq(resp.headers, "x-total-count", "6"),
@@ -567,7 +657,7 @@ fn case_locations_emits_x_total_count() -> cc.Case {
 fn case_locations_limit_truncates_and_links_next() -> cc.Case {
   {
     name: "GET /ocpi/2.2.1/locations?limit=2 returns 2 items + Link rel=\"next\"",
-    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+    run: fn (cfg :: cc.TargetConfig) -> [net, proc] cc.CaseResult {
       let url := str.concat(cc.module_url(cfg, "locations"), "?limit=2")
       match raw_get(url, cfg.token) {
         Err(m)   => CaseFail(m),
@@ -582,7 +672,7 @@ fn case_locations_limit_truncates_and_links_next() -> cc.Case {
 fn case_locations_last_page_has_no_link() -> cc.Case {
   {
     name: "GET /ocpi/2.2.1/locations?offset=4&limit=2 omits Link rel=\"next\"",
-    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+    run: fn (cfg :: cc.TargetConfig) -> [net, proc] cc.CaseResult {
       let url := str.concat(cc.module_url(cfg, "locations"),
                             "?offset=4&limit=2")
       match raw_get(url, cfg.token) {
@@ -598,7 +688,7 @@ fn case_locations_last_page_has_no_link() -> cc.Case {
 fn case_locations_date_from_filters() -> cc.Case {
   {
     name: "GET /ocpi/2.2.1/locations?date_from=2026-05-17 filters by last_updated",
-    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+    run: fn (cfg :: cc.TargetConfig) -> [net, proc] cc.CaseResult {
       let url := str.concat(cc.module_url(cfg, "locations"),
                             "?date_from=2026-05-17T00:00:00Z")
       match raw_get(url, cfg.token) {
@@ -614,7 +704,7 @@ fn case_locations_date_from_filters() -> cc.Case {
 fn case_locations_date_to_filters() -> cc.Case {
   {
     name: "GET /ocpi/2.2.1/locations?date_to=2026-05-15T12:00:00Z filters by last_updated",
-    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+    run: fn (cfg :: cc.TargetConfig) -> [net, proc] cc.CaseResult {
       let url := str.concat(cc.module_url(cfg, "locations"),
                             "?date_to=2026-05-15T12:00:00Z")
       match raw_get(url, cfg.token) {
@@ -686,7 +776,7 @@ fn and_then(first :: cc.CaseResult, second :: () -> cc.CaseResult) -> cc.CaseRes
 fn case_chargingprofiles_list_returns_ok() -> cc.Case {
   {
     name: "GET /ocpi/{version}/chargingprofiles returns 1000 envelope",
-    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+    run: fn (cfg :: cc.TargetConfig) -> [net, proc] cc.CaseResult {
       match client.get_with_token(cc.module_url(cfg, "chargingprofiles"), cfg.token) {
         Ok(_)  => CasePass,
         Err(e) => CaseFail(cc.client_error_short(e)),
@@ -698,7 +788,7 @@ fn case_chargingprofiles_list_returns_ok() -> cc.Case {
 fn case_hubclientinfo_list_returns_ok() -> cc.Case {
   {
     name: "GET /ocpi/{version}/hubclientinfo returns 1000 envelope",
-    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+    run: fn (cfg :: cc.TargetConfig) -> [net, proc] cc.CaseResult {
       match client.get_with_token(cc.module_url(cfg, "hubclientinfo"), cfg.token) {
         Ok(_)  => CasePass,
         Err(e) => CaseFail(cc.client_error_short(e)),
@@ -710,7 +800,7 @@ fn case_hubclientinfo_list_returns_ok() -> cc.Case {
 fn case_payments_list_returns_ok() -> cc.Case {
   {
     name: "GET /ocpi/{version}/payments returns 1000 envelope (v2.3.0)",
-    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+    run: fn (cfg :: cc.TargetConfig) -> [net, proc] cc.CaseResult {
       match client.get_with_token(cc.module_url(cfg, "payments"), cfg.token) {
         Ok(_)  => CasePass,
         Err(e) => CaseFail(cc.client_error_short(e)),
@@ -725,7 +815,7 @@ fn case_payments_list_returns_ok() -> cc.Case {
 fn case_v230_detail_lists_payments() -> cc.Case {
   {
     name: "GET /ocpi/2.3.0 version_detail advertises `payments`",
-    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+    run: fn (cfg :: cc.TargetConfig) -> [net, proc] cc.CaseResult {
       match client.get_with_token(cc.version_detail_url(cfg), cfg.token) {
         Err(e)   => CaseFail(cc.client_error_short(e)),
         Ok(data) => check_detail_advertises(data, "payments"),
@@ -840,7 +930,7 @@ fn run_and_report(
   banner :: Str,
   suite  :: List[cc.Case],
   cfg    :: cc.TargetConfig
-) -> [net, io] Int {
+) -> [net, io, proc] Int {
   let summary := cc.run_suite(suite, cfg)
   let _ := io.print(banner)
   let _ := list.map(cc.text_lines(summary),
@@ -849,23 +939,23 @@ fn run_and_report(
   if summary.failed > 0 { 1 / 0 } else { 0 }
 }
 
-fn main() -> [net, io] Int {
+fn main() -> [net, io, proc] Int {
   run_and_report("=== lex-ocpi CPO conformance harness (v2.2.1) ===",
     suite_v221(), default_v221())
 }
 
-fn main_json() -> [net, io] Int {
+fn main_json() -> [net, io, proc] Int {
   let summary := cc.run_suite(suite_v221(), default_v221())
   let _ := io.print(cc.to_json_str(summary))
   if summary.failed > 0 { 1 / 0 } else { 0 }
 }
 
-fn main_v211() -> [net, io] Int {
+fn main_v211() -> [net, io, proc] Int {
   run_and_report("=== lex-ocpi CPO conformance harness (v2.1.1) ===",
     suite_cross_version(), default_v211())
 }
 
-fn main_v230() -> [net, io] Int {
+fn main_v230() -> [net, io, proc] Int {
   run_and_report("=== lex-ocpi CPO conformance harness (v2.3.0) ===",
     list.concat(suite_cross_version(), suite_v230_modules()), default_v230())
 }

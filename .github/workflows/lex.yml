@@ -96,13 +96,13 @@ jobs:
           # helpers carry [time] even though the harnesses don't invoke
           # them — lex's effect checker scans every transitively-
           # imported function.
-          lex run --allow-effects net,io,time conformance/cpo_harness.lex main
-          lex run --allow-effects net,io,time conformance/cpo_harness.lex main_v211
-          lex run --allow-effects net,io,time conformance/cpo_harness.lex main_v230
-          lex run --allow-effects net,io,time conformance/emsp_harness.lex main
+          lex run --allow-effects net,io,time,proc conformance/cpo_harness.lex main
+          lex run --allow-effects net,io,time,proc conformance/cpo_harness.lex main_v211
+          lex run --allow-effects net,io,time,proc conformance/cpo_harness.lex main_v230
+          lex run --allow-effects net,io,time,proc conformance/emsp_harness.lex main
           # Harness self-test: assert the harness catches deliberate
           # spec violations from `examples/cpo_buggy.lex`. A passing
           # selftest proves the harness's assertions actually have
           # teeth — every wrapped case must turn FAIL → PASS via
           # `cc.expect_fail`.
-          lex run --allow-effects net,io,time conformance/selftest.lex main
+          lex run --allow-effects net,io,time,proc conformance/selftest.lex main
