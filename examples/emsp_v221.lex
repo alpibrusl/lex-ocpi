@@ -24,6 +24,7 @@ import "std.str"  as str
 import "std.list" as list
 import "std.map"  as map
 import "std.time" as time
+import "std.conc" as conc
 
 import "lex-schema/json_value" as jv
 
@@ -51,6 +52,49 @@ fn emsp_base_v221() -> Str {
 # single hard-coded value so the spec-required negatives (missing /
 # wrong token → 2000) are testable.
 fn valid_emsp_token() -> Str { "emsp-secret" }
+
+# ---- Async-command callback recorder ----------------------------
+#
+# OCPI commands flow: the eMSP POSTs `START_SESSION` to the CPO; the
+# CPO returns 1000 ACCEPTED synchronously; later the CPO POSTs a
+# `CommandResult` to the `response_url` the eMSP supplied. To make
+# the round-trip observable, the fake eMSP exposes a small recorder:
+#
+#   POST /callback  — stash the inbound body (raw JSON string)
+#   GET  /callback  — return the latest stashed body, or `null`
+#
+# State lives in a `std.conc` actor so concurrent POSTs serialize
+# safely. Only the latest body is retained — the harness asserts on
+# the most-recent CommandResult, not history.
+
+type CbState = { last :: Option[Str] }
+
+type CbMsg =
+    CbStore(Str)
+  | CbFetch
+
+type CbReply =
+    CbDone
+  | CbLatest(Option[Str])
+
+fn cb_handler(state :: CbState, msg :: CbMsg) -> (CbState, CbReply) {
+  match msg {
+    CbStore(s) => ({ last: Some(s) }, CbDone),
+    CbFetch    => (state, CbLatest(state.last)),
+  }
+}
+
+fn cb_store(actor :: Actor[CbState], body :: Str) -> [concurrent] Unit {
+  let _ := conc.tell(actor, CbStore(body))
+  ()
+}
+
+fn cb_latest(actor :: Actor[CbState]) -> [concurrent] Option[Str] {
+  match conc.ask(actor, CbFetch) {
+    CbLatest(o) => o,
+    CbDone      => None,
+  }
+}
 
 # ---- Demo authorize fixture --------------------------------------
 #
@@ -165,9 +209,11 @@ fn json_response(body :: Str) -> Response {
   }
 }
 
-fn handle(req :: Request) -> [time] Response {
+fn handle(actor :: Actor[CbState], req :: Request) -> [time, concurrent] Response {
   let timestamp := time.now_str()
-  match check_authorization(req.headers, timestamp) {
+  if is_callback_post(req)   { handle_cb_post(actor, req, timestamp) }
+  else { if is_callback_get(req) { handle_cb_get(actor, timestamp) }
+  else { match check_authorization(req.headers, timestamp) {
     Some(err) => json_response(env.encode(err)),
     None      => match check_unsupported_version(req.path, timestamp) {
       Some(err) => json_response(env.encode(err)),
@@ -176,7 +222,42 @@ fn handle(req :: Request) -> [time] Response {
         None      => json_response(env.encode(dispatch_request(req, timestamp))),
       },
     },
+  } } }
+}
+
+# Callback endpoints are intentionally OUTSIDE the OCPI auth gate —
+# the CPO's outbound callback doesn't carry our credentials token,
+# and a real eMSP would key callbacks by the `response_url` they
+# themselves chose at the time of dispatch.
+fn is_callback_post(req :: Request) -> Bool {
+  req.method == "POST" and req.path == "/callback"
+}
+
+fn is_callback_get(req :: Request) -> Bool {
+  req.method == "GET" and req.path == "/callback"
+}
+
+fn handle_cb_post(
+  actor     :: Actor[CbState],
+  req       :: Request,
+  timestamp :: Str
+) -> [concurrent] Response {
+  let _ := cb_store(actor, req.body)
+  json_response(env.encode(env.ok_empty(timestamp)))
+}
+
+fn handle_cb_get(
+  actor     :: Actor[CbState],
+  timestamp :: Str
+) -> [concurrent] Response {
+  let payload := match cb_latest(actor) {
+    None    => JNull,
+    Some(s) => match jv.parse(s) {
+      Err(_) => JStr(s),               # surface as-is if not JSON
+      Ok(j)  => j,
+    },
   }
+  json_response(env.encode(env.ok(payload, timestamp)))
 }
 
 fn dispatch_request(req :: Request, timestamp :: Str) -> env.OcpiResponse {
@@ -342,7 +423,9 @@ fn ocpi_request(
 
 # ---- Entry point ------------------------------------------------
 
-fn main() -> [net, io, time] Nil {
+fn main() -> [net, io, time, concurrent] Nil {
   let _ := io.print("eMSP v2.2.1  http://localhost:9101/ocpi/versions")
-  net.serve_fn(9101, handle)
+  let actor := conc.spawn({ last: None }, cb_handler)
+  net.serve_fn(9101,
+    fn (req :: Request) -> [time, concurrent] Response { handle(actor, req) })
 }

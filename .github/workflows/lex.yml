@@ -78,7 +78,7 @@ jobs:
           set -uo pipefail
           lex run --allow-effects net,io,time examples/cpo_v221.lex main &
           CPO_PID=$!
-          lex run --allow-effects net,io,time examples/emsp_v221.lex main &
+          lex run --allow-effects net,io,time,concurrent examples/emsp_v221.lex main &
           EMSP_PID=$!
           trap 'kill ${CPO_PID} ${EMSP_PID} 2>/dev/null || true' EXIT
           for i in $(seq 1 50); do

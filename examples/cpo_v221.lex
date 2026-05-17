@@ -22,6 +22,8 @@ import "std.str"  as str
 import "std.list" as list
 import "std.map"  as map
 import "std.time" as time
+import "std.http" as http
+import "std.bytes" as bytes
 
 import "lex-schema/json_value" as jv
 
@@ -353,7 +355,7 @@ fn json_response(body :: Str) -> Response {
   }
 }
 
-fn handle(req :: Request) -> [time] Response {
+fn handle(req :: Request) -> [time, net] Response {
   let timestamp := time.now_str()
   let query     := parse_query(req.query)
   match check_authorization(req.headers, timestamp) {
@@ -377,11 +379,64 @@ fn render_dispatched(
   req       :: Request,
   query     :: Map[Str, Str],
   timestamp :: Str
-) -> Response {
+) -> [net] Response {
   if is_locations_list(req.method, req.path) {
     paginated_locations_response(query, req.path, timestamp)
+  } else { if is_command_post(req.method, req.path) {
+    command_with_callback(req, query, timestamp)
   } else {
     json_response(env.encode(dispatch_request(req, query, timestamp)))
+  } }
+}
+
+# The CPO accepts a command synchronously (`1000 ACCEPTED`) and is
+# obligated to deliver a `CommandResult` to the `response_url` the
+# requester supplied. Real CPOs do the work asynchronously; the
+# fixture posts the callback inline (before returning ACCEPTED) so
+# the harness's assertion ordering is deterministic — by the time
+# the sync response reaches the client, the callback has already
+# landed in the eMSP's recorder.
+fn is_command_post(method :: Str, path :: Str) -> Bool {
+  if method != "POST" { false }
+  else {
+    match map_url_to_module(path) {
+      None        => false,
+      Some(entry) => entry.module == mid.commands(),
+    }
+  }
+}
+
+fn command_with_callback(
+  req       :: Request,
+  query     :: Map[Str, Str],
+  timestamp :: Str
+) -> [net] Response {
+  let _ := fire_command_callback(req, timestamp)
+  json_response(env.encode(dispatch_request(req, query, timestamp)))
+}
+
+fn fire_command_callback(req :: Request, timestamp :: Str) -> [net] Unit {
+  match jv.parse(req.body) {
+    Err(_) => (),
+    Ok(j)  => match jv.get_field(j, "response_url") {
+      None    => (),
+      Some(v) => match jv.as_str(v) {
+        None      => (),
+        Some(url) => {
+          let body := jv.stringify(JObj([
+            ("result", JStr("ACCEPTED")),
+          ]))
+          let _ := http.send({
+            method:     "POST",
+            url:        url,
+            headers:    map.set(map.new(), "content-type", "application/json"),
+            body:       Some(bytes.from_str(body)),
+            timeout_ms: Some(2000),
+          })
+          ()
+        },
+      },
+    },
   }
 }
 
