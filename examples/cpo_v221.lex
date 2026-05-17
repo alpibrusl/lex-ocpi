@@ -388,15 +388,23 @@ fn check_unsupported_version(
     None                                # outside the OCPI mount, leave for fallback
   } else {
     let tail := str.slice(path, str.len("/ocpi/"), str.len(path))
-    let ver  := first_segment(tail)
-    if ver == versions.v211() or ver == versions.v221() or ver == versions.v230() {
+    let segs := str.split(tail, "/")
+    # Only fire 3002 when the caller actually targeted a versioned
+    # module — i.e. /ocpi/{ver}/{something...}. A bare /ocpi/{ver}
+    # routes to the version-detail handler, and a bare /ocpi/{junk}
+    # (no module segment, junk is not a known version) is a generic
+    # unknown-route case and should fall through to the 2000 handler.
+    let ver := first_segment(tail)
+    if list.len(segs) < 2 {
+      None
+    } else { if ver == versions.v211() or ver == versions.v221() or ver == versions.v230() {
       None                              # known version
     } else {
       Some(env.fail_with_data(
              ocpi_status.unsupported_version(),
              str.concat("Unsupported version: ", ver),
              JNull, timestamp))
-    }
+    } }
   } }
 }
 
