@@ -8,8 +8,8 @@ lex     = "0.9.5"
 # Pairs with:
 #   lex-schema  — pydantic-style request validators (path = "../lex-schema")
 #   lex-orm     — typed query builder + migration runner; provides
-#                 the `Repo[T]` instances and migrations consumed by
-#                 `src/repo/*.lex` (see issue #6).
+#                 the typed `Repo[T]` instances + migrations consumed
+#                 by `src/repo/*.lex` (see issue #6).
 #   lex-web     — FastAPI-style HTTP framework (optional)
 #   lex-ocpp    — companion OCPP library (CP↔CSMS over WebSocket)
 #
