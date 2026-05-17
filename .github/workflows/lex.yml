@@ -74,22 +74,22 @@ jobs:
           JSON=$(jq -R -s . < /tmp/schema.json)
           lex run tools/gen.lex generate "$JSON" | grep -q 'fn heartbeat_schema'
 
-      - name: Smoke-test the CPO example
+      - name: Conformance harness against the fake CPO example
         working-directory: lex-ocpi
         run: |
           set -euo pipefail
+          # Start the fake CPO server in the background.
           lex run --allow-effects net,io,time examples/cpo_v221.lex main &
           SERVER_PID=$!
           # Poll until the server is up (max 5s).
           for i in $(seq 1 50); do
-            if curl -sf http://localhost:9100/ocpi/versions > /tmp/versions.json; then
+            if curl -sf http://localhost:9100/ocpi/versions > /dev/null; then
               break
             fi
             sleep 0.1
           done
-          grep -q '"status_code":1000' /tmp/versions.json
-          curl -sf http://localhost:9100/ocpi/2.2.1/locations/LOC1 \
-            | grep -q '"country_code":"NL"'
-          curl -sf http://localhost:9100/ocpi/2.2.1/locations/LOC9 \
-            | grep -q '"status_code":2003'
+          # Run the conformance harness against it.
+          lex run --allow-effects net,io conformance/cpo_harness.lex main
+          HARNESS_EXIT=$?
           kill $SERVER_PID 2>/dev/null || true
+          exit $HARNESS_EXIT
