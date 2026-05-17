@@ -139,14 +139,28 @@ fn detail_to_json(d :: VersionDetail) -> jv.Json {
 
 fn standard_cpo_v221_endpoints(base :: Str) -> List[Endpoint] {
   [
-    endpoint_receiver(mid.credentials(),     concat3(base, "/", "credentials")),
-    endpoint_sender(  mid.locations(),       concat3(base, "/", "locations")),
-    endpoint_sender(  mid.sessions(),        concat3(base, "/", "sessions")),
-    endpoint_sender(  mid.cdrs(),            concat3(base, "/", "cdrs")),
-    endpoint_sender(  mid.tariffs(),         concat3(base, "/", "tariffs")),
-    endpoint_receiver(mid.tokens(),          concat3(base, "/", "tokens")),
-    endpoint_receiver(mid.commands(),        concat3(base, "/", "commands")),
+    endpoint_receiver(mid.credentials(),      concat3(base, "/", "credentials")),
+    endpoint_sender(  mid.locations(),        concat3(base, "/", "locations")),
+    endpoint_sender(  mid.sessions(),         concat3(base, "/", "sessions")),
+    endpoint_sender(  mid.cdrs(),             concat3(base, "/", "cdrs")),
+    endpoint_sender(  mid.tariffs(),          concat3(base, "/", "tariffs")),
+    endpoint_receiver(mid.tokens(),           concat3(base, "/", "tokens")),
+    endpoint_receiver(mid.commands(),         concat3(base, "/", "commands")),
+    endpoint_receiver(mid.chargingprofiles(), concat3(base, "/", "chargingprofiles")),
+    endpoint_receiver(mid.hubclientinfo(),    concat3(base, "/", "hubclientinfo")),
   ]
+}
+
+# v2.3.0 inherits the v2.2.1 module set and adds Payments. New
+# modules adopted in 2.3.0 (PaymentReference, PaymentInfo, …) are
+# served alongside the existing receiver/sender split.
+fn standard_cpo_v230_endpoints(base :: Str) -> List[Endpoint] {
+  list_concat(standard_cpo_v221_endpoints(base),
+    [endpoint_sender(mid.payments(), concat3(base, "/", "payments"))])
+}
+
+fn list_concat(a :: List[Endpoint], b :: List[Endpoint]) -> List[Endpoint] {
+  list.concat(a, b)
 }
 
 fn standard_emsp_v221_endpoints(base :: Str) -> List[Endpoint] {

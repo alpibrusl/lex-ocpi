@@ -205,6 +205,64 @@ fn demo_tariff() -> jv.Json {
   ])
 }
 
+# Minimal-but-spec-shaped fixture for v2.2.1+ ChargingProfile
+# results. A receiver-side GET on /chargingprofiles is rare in the
+# wild (the module is mostly write-driven from the eMSP); a list
+# response is a fine stub for harness coverage.
+fn demo_charging_profile_result() -> jv.Json {
+  JObj([
+    ("result",          JStr("ACCEPTED")),
+    ("active_charging_profile", JObj([
+      ("start_date_time", JStr("2026-05-15T10:00:00Z")),
+      ("charging_profile", JObj([
+        ("start_date_time",  JStr("2026-05-15T10:00:00Z")),
+        ("duration",         JInt(3600)),
+        ("charging_rate_unit", JStr("W")),
+        ("charging_profile_period", JList([
+          JObj([
+            ("start_period", JInt(0)),
+            ("limit",        JFloat(11000.0)),
+          ]),
+        ])),
+      ])),
+    ])),
+  ])
+}
+
+# HubClientInfo — the gossip module that lets parties find each
+# other through a Hub. A list of self-descriptions is the canonical
+# GET shape.
+fn demo_hub_client_info() -> jv.Json {
+  JObj([
+    ("country_code", JStr(cpo_country())),
+    ("party_id",     JStr(cpo_party())),
+    ("role",         JStr("CPO")),
+    ("status",       JStr("CONNECTED")),
+    ("last_updated", JStr("2026-05-15T10:00:00Z")),
+  ])
+}
+
+# Payments — v2.3.0 only. A Payment ties a charging session to an
+# external payment provider; the demo entry is the minimum the
+# v2.3.0 PaymentSchema requires.
+fn demo_payment() -> jv.Json {
+  JObj([
+    ("country_code", JStr(cpo_country())),
+    ("party_id",     JStr(cpo_party())),
+    ("id",           JStr("PAY1")),
+    ("payment_reference", JObj([
+      ("id",       JStr("PR1")),
+      ("provider", JStr("STRIPE")),
+    ])),
+    ("total_cost", JObj([
+      ("excl_vat", JFloat(5.50)),
+      ("incl_vat", JFloat(6.65)),
+    ])),
+    ("currency",     JStr("EUR")),
+    ("last_updated", JStr("2026-05-15T10:00:00Z")),
+  ])
+}
+
 # Our own credentials — returned to the eMSP after a successful
 # /credentials POST. Real CPOs rotate the token here per the spec's
 # bidirectional-credentials handshake; the fake just echoes a
@@ -248,7 +306,7 @@ fn get_version_detail_v221(_req :: oroute.OcpiRequest) -> oroute.HandlerResult {
 
 fn get_version_detail_v230(_req :: oroute.OcpiRequest) -> oroute.HandlerResult {
   let d := versions.detail(versions.v230(),
-    versions.standard_cpo_v221_endpoints(cpo_base_v230()))
+    versions.standard_cpo_v230_endpoints(cpo_base_v230()))
   oroute.ok(versions.detail_to_json(d))
 }
 
@@ -296,6 +354,18 @@ fn post_credentials(_req :: oroute.OcpiRequest) -> oroute.HandlerResult {
   oroute.ok(demo_credentials())
 }
 
+fn get_chargingprofiles(_req :: oroute.OcpiRequest) -> oroute.HandlerResult {
+  oroute.ok_list([demo_charging_profile_result()])
+}
+
+fn get_hubclientinfo(_req :: oroute.OcpiRequest) -> oroute.HandlerResult {
+  oroute.ok_list([demo_hub_client_info()])
+}
+
+fn get_payments(_req :: oroute.OcpiRequest) -> oroute.HandlerResult {
+  oroute.ok_list([demo_payment()])
+}
+
 # ---- Registry wiring --------------------------------------------
 
 fn registry() -> oroute.Registry {
@@ -336,6 +406,15 @@ fn registry() -> oroute.Registry {
     |> fn (r :: oroute.Registry) -> oroute.Registry {
          oroute.handler_with_schema(r, oroute.post(), mid.credentials(),
            credentials.validate_credentials_v221, post_credentials)
+       }
+    |> fn (r :: oroute.Registry) -> oroute.Registry {
+         oroute.handler(r, oroute.get(), mid.chargingprofiles(), get_chargingprofiles)
+       }
+    |> fn (r :: oroute.Registry) -> oroute.Registry {
+         oroute.handler(r, oroute.get(), mid.hubclientinfo(), get_hubclientinfo)
+       }
+    |> fn (r :: oroute.Registry) -> oroute.Registry {
+         oroute.handler(r, oroute.get(), mid.payments(), get_payments)
        }
 }
 
@@ -642,6 +721,12 @@ fn map_versioned_path(rest :: Str) -> Option[RouteHit] {
     Some({ module: mid.tariffs(), params: map.new() })
   } else { if rest == "credentials" {
     Some({ module: mid.credentials(), params: map.new() })
+  } else { if rest == "chargingprofiles" {
+    Some({ module: mid.chargingprofiles(), params: map.new() })
+  } else { if rest == "hubclientinfo" {
+    Some({ module: mid.hubclientinfo(), params: map.new() })
+  } else { if rest == "payments" {
+    Some({ module: mid.payments(), params: map.new() })
   } else { if str.starts_with(rest, "tokens/") {
     let suffix := str.slice(rest, str.len("tokens/"), str.len(rest))
     Some({
@@ -656,7 +741,7 @@ fn map_versioned_path(rest :: Str) -> Option[RouteHit] {
     })
   } else {
     None
-  } } } } } } } }
+  } } } } } } } } } } }
 }
 
 fn ocpi_request(
