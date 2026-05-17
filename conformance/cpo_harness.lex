@@ -451,6 +451,60 @@ fn case_post_command_returns_accepted() -> cc.Case {
   }
 }
 
+# Async-callback round-trip. The CPO is obligated to POST a
+# `CommandResult` to whatever `response_url` the eMSP supplied at
+# dispatch. The fake eMSP records the latest inbound body under
+# GET /callback; the case POSTs a StartSession with response_url set
+# to that recorder, waits briefly for the CPO to fire, then asserts
+# the recorder has the CommandResult.
+fn callback_recorder_url() -> Str { "http://localhost:9101/callback" }
+
+fn case_command_callback_arrives() -> cc.Case {
+  {
+    name: "POST /commands/START_SESSION delivers CommandResult to response_url",
+    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+      let body := jv.stringify(JObj([
+        ("response_url", JStr(callback_recorder_url())),
+        ("token",        JObj([
+          ("country_code", JStr("DE")),
+          ("party_id",     JStr("ABC")),
+          ("uid",          JStr("RFID-A")),
+          ("type",         JStr("RFID")),
+          ("contract_id",  JStr("DE-ABC-C12345-T")),
+        ])),
+        ("location_id",  JStr("LOC1")),
+      ]))
+      # The fake CPO fires the callback synchronously before
+      # returning ACCEPTED; by the time this call returns, the
+      # recorder has already received the POST. No sleep needed.
+      match client.post_json(command_url(cfg, "START_SESSION"), body, cfg.token) {
+        Err(e) => CaseFail(cc.client_error_short(e)),
+        Ok(_)  => check_recorder_has_accepted_result(),
+      }
+    },
+  }
+}
+
+fn check_recorder_has_accepted_result() -> [net] cc.CaseResult {
+  match raw_get(callback_recorder_url(), "any") {
+    Err(m) => CaseFail(str.concat("recorder GET: ", m)),
+    Ok(resp) => match jv.get_field(resp.body, "data") {
+      None    => CaseFail("recorder envelope missing `data`"),
+      Some(d) => match d {
+        JNull  => CaseFail("no callback recorded yet"),
+        _      => match jv.get_field(d, "result") {
+          None    => CaseFail("CommandResult body missing `result`"),
+          Some(v) => match jv.as_str(v) {
+            None    => CaseFail("CommandResult.result is not a string"),
+            Some(s) => if s == "ACCEPTED" { CasePass }
+                       else { CaseFail(str.concat("result=", s)) },
+          },
+        },
+      },
+    },
+  }
+}
+
 fn check_command_result(data :: jv.Json, want :: Str) -> cc.CaseResult {
   match jv.get_field(data, "result") {
     None    => CaseFail("CommandResponse missing `result`"),
@@ -648,6 +702,7 @@ fn suite_v221() -> List[cc.Case] {
     case_credentials_missing_field_returns_2001(),
     case_put_token_returns_ok(),
     case_post_command_returns_accepted(),
+    case_command_callback_arrives(),
     case_locations_emits_x_total_count(),
     case_locations_limit_truncates_and_links_next(),
     case_locations_last_page_has_no_link(),
