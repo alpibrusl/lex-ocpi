@@ -1,28 +1,40 @@
-# lex-ocpi — OCPI 2.2.1 CPO server
+# lex-ocpi — OCPI 2.1.1 / 2.2.1 / 2.3.0 CPO server
 #
-# Implements the v2.2.1 surface this library currently exercises:
-# Versions discovery + Locations + Sessions + CDRs + Tariffs (CPO
-# as sender) + Tokens PUT + Commands POST (CPO as receiver).
-# Drop in real Sessions / CDRs / Tariffs sources via the route
-# registry to build a production CPO.
+# Implements the surface this library exercises across all three
+# supported OCPI versions:
 #
-# Routing is wired up at the `registry()` constructor — add or
-# remove `handler(...)` calls there to extend the surface.
+#   - Versions discovery (single endpoint for all versions)
+#   - Per-version endpoint catalogue at /ocpi/{version}
+#   - Per-version Locations / Sessions / CDRs / Tariffs (CPO is sender)
+#   - Per-version Tokens PUT + Commands POST (CPO is receiver, v2.2.1)
+#
+# The same demo objects are served regardless of version — the goal
+# here is exercising the URL shape and version-detail catalogue,
+# not modelling each version's per-field deltas. Real CPOs replace
+# the demo objects with version-specific projections.
+#
+# Filename note: still `cpo_v221.lex` for CI compatibility; the
+# server is now multi-version. Don't rename without bumping the
+# workflow.
 #
 # Run:
 #   lex run --allow-effects net,io,time examples/cpo_v221.lex main
 #   curl -H "Authorization: Token cpo-secret" \
 #        http://localhost:9100/ocpi/versions
 #   curl -H "Authorization: Token cpo-secret" \
+#        http://localhost:9100/ocpi/2.1.1/locations/LOC1
+#   curl -H "Authorization: Token cpo-secret" \
 #        http://localhost:9100/ocpi/2.2.1/locations/LOC1
+#   curl -H "Authorization: Token cpo-secret" \
+#        http://localhost:9100/ocpi/2.3.0/locations/LOC1
 #
 # Adversarial scenarios:
 #   - Request without `Authorization` (or with a non-`Token` scheme)
 #     gets a 200-status HTTP response carrying an OCPI envelope with
 #     `status_code: 2000 ("Generic client error")`. The HTTP layer
 #     stays 200 — OCPI errors travel inside the envelope.
-#   - GET /ocpi/2.2.1/locations/LOC9 (no such location) returns the
-#     spec-shaped `2003 ("Unknown Location")` envelope.
+#   - GET /ocpi/{version}/locations/LOC9 (no such location) returns
+#     the spec-shaped `2003 ("Unknown Location")` envelope.
 #   - A request with a method/path the registry doesn't know maps to
 #     `status_code: 2000` from the dispatcher's unknown-route fallback.
 
@@ -46,9 +58,9 @@ import "../src/module_id"       as mid
 fn cpo_country() -> Str { "NL" }
 fn cpo_party()   -> Str { "EXM" }
 
-fn cpo_base_v221() -> Str {
-  "http://localhost:9100/ocpi/2.2.1"
-}
+fn cpo_base_v211() -> Str { "http://localhost:9100/ocpi/2.1.1" }
+fn cpo_base_v221() -> Str { "http://localhost:9100/ocpi/2.2.1" }
+fn cpo_base_v230() -> Str { "http://localhost:9100/ocpi/2.3.0" }
 
 # ---- Demo Location ----------------------------------------------
 
@@ -89,7 +101,7 @@ fn demo_location() -> jv.Json {
   ])
 }
 
-# ---- Demo Session (OCPI 2.2.1 §9) ------------------------------
+# ---- Demo Session, CDR, Tariff (same across versions) ----------
 
 fn demo_session() -> jv.Json {
   JObj([
@@ -114,8 +126,6 @@ fn demo_session() -> jv.Json {
     ("last_updated",     JStr("2026-05-15T10:00:00Z")),
   ])
 }
-
-# ---- Demo CDR (OCPI 2.2.1 §10) ---------------------------------
 
 fn demo_cdr() -> jv.Json {
   JObj([
@@ -167,8 +177,6 @@ fn demo_cdr() -> jv.Json {
   ])
 }
 
-# ---- Demo Tariff (OCPI 2.2.1 §11) ------------------------------
-
 fn demo_tariff() -> jv.Json {
   JObj([
     ("country_code", JStr(cpo_country())),
@@ -190,18 +198,38 @@ fn demo_tariff() -> jv.Json {
   ])
 }
 
-# ---- Pure handlers (no effects) ---------------------------------
+# ---- Pure handlers ----------------------------------------------
 
+# Versions discovery: advertise all three supported versions.
 fn get_versions(_req :: oroute.OcpiRequest) -> oroute.HandlerResult {
   oroute.ok_list([
-    versions.version_to_json(
-      versions.version(versions.v221(), cpo_base_v221())),
+    versions.version_to_json(versions.version(versions.v211(), cpo_base_v211())),
+    versions.version_to_json(versions.version(versions.v221(), cpo_base_v221())),
+    versions.version_to_json(versions.version(versions.v230(), cpo_base_v230())),
   ])
 }
 
-fn get_version_detail(_req :: oroute.OcpiRequest) -> oroute.HandlerResult {
+# Per-version endpoint catalogue. We reuse the v2.2.1 endpoint
+# helper across all three versions — the URL paths and role tags
+# differ slightly per spec, but a conformance peer cares about the
+# wire shape (endpoints array + version field), not strict role
+# accuracy on a demo CPO. Real CPOs ship version-specific lists.
+
+fn get_version_detail_v211(_req :: oroute.OcpiRequest) -> oroute.HandlerResult {
+  let d := versions.detail(versions.v211(),
+    versions.standard_cpo_v221_endpoints(cpo_base_v211()))
+  oroute.ok(versions.detail_to_json(d))
+}
+
+fn get_version_detail_v221(_req :: oroute.OcpiRequest) -> oroute.HandlerResult {
   let d := versions.detail(versions.v221(),
     versions.standard_cpo_v221_endpoints(cpo_base_v221()))
+  oroute.ok(versions.detail_to_json(d))
+}
+
+fn get_version_detail_v230(_req :: oroute.OcpiRequest) -> oroute.HandlerResult {
+  let d := versions.detail(versions.v230(),
+    versions.standard_cpo_v221_endpoints(cpo_base_v230()))
   oroute.ok(versions.detail_to_json(d))
 }
 
@@ -234,19 +262,6 @@ fn get_tariffs(_req :: oroute.OcpiRequest) -> oroute.HandlerResult {
   oroute.ok_list([demo_tariff()])
 }
 
-# ---- CPO-as-receiver: Tokens PUT + Commands POST ---------------
-#
-# eMSP pushes its Token catalogue to the CPO via PUT; the CPO is the
-# receiver. Real CPOs upsert into a token cache; this fixture just
-# acknowledges the write — empty-data 1000 envelope.
-#
-# Commands POST is the eMSP-asks-CPO-to-act direction (StartSession /
-# StopSession / ReserveNow / CancelReservation / UnlockConnector).
-# The sync reply is a `CommandResponse` envelope (ACCEPTED / REJECTED /
-# …); the async `CommandResult` callback to the eMSP's `response_url`
-# is not exercised here (needs a background task; out of scope for the
-# example).
-
 fn put_token(_req :: oroute.OcpiRequest) -> oroute.HandlerResult {
   HOkEmpty
 }
@@ -259,6 +274,12 @@ fn post_command(_req :: oroute.OcpiRequest) -> oroute.HandlerResult {
 }
 
 # ---- Registry wiring --------------------------------------------
+#
+# Module IDs are version-agnostic: the URL router strips the
+# `/ocpi/{version}/` prefix before dispatching, so the same handler
+# fires regardless of which OCPI version the client requested.
+# `version_detail` is the only per-version handler — it has to
+# return the version-specific endpoint catalogue.
 
 fn registry() -> oroute.Registry {
   oroute.new()
@@ -266,7 +287,13 @@ fn registry() -> oroute.Registry {
          oroute.handler(r, oroute.get(), mid.versions(), get_versions)
        }
     |> fn (r :: oroute.Registry) -> oroute.Registry {
-         oroute.handler(r, oroute.get(), "version_detail", get_version_detail)
+         oroute.handler(r, oroute.get(), "version_detail_v211", get_version_detail_v211)
+       }
+    |> fn (r :: oroute.Registry) -> oroute.Registry {
+         oroute.handler(r, oroute.get(), "version_detail", get_version_detail_v221)
+       }
+    |> fn (r :: oroute.Registry) -> oroute.Registry {
+         oroute.handler(r, oroute.get(), "version_detail_v230", get_version_detail_v230)
        }
     |> fn (r :: oroute.Registry) -> oroute.Registry {
          oroute.handler(r, oroute.get(), mid.locations(), get_locations)
@@ -339,49 +366,79 @@ fn dispatch_request(req :: Request, timestamp :: Str) -> env.OcpiResponse {
 }
 
 # ---- URL → (module, path_params) --------------------------------
+#
+# Two-stage routing:
+#   1. Top-level: /ocpi/versions and per-version detail endpoints
+#      route directly to their handlers.
+#   2. Version-prefixed: paths like /ocpi/2.1.1/locations,
+#      /ocpi/2.2.1/locations, /ocpi/2.3.0/locations all route to the
+#      same `mid.locations()` module — the demo data doesn't depend
+#      on the version, so we don't duplicate handlers.
 
 type RouteHit = { module :: Str, params :: Map[Str, Str] }
 
 fn map_url_to_module(path :: Str) -> Option[RouteHit] {
   if path == "/ocpi/versions" {
     Some({ module: mid.versions(), params: map.new() })
-  } else { if path == "/ocpi/2.2.1/" or path == "/ocpi/2.2.1" {
+  } else { if path == "/ocpi/2.1.1" or path == "/ocpi/2.1.1/" {
+    Some({ module: "version_detail_v211", params: map.new() })
+  } else { if path == "/ocpi/2.2.1" or path == "/ocpi/2.2.1/" {
     Some({ module: "version_detail", params: map.new() })
-  } else { if path == "/ocpi/2.2.1/locations" {
+  } else { if path == "/ocpi/2.3.0" or path == "/ocpi/2.3.0/" {
+    Some({ module: "version_detail_v230", params: map.new() })
+  } else {
+    match strip_version_prefix(path) {
+      None       => None,
+      Some(rest) => map_versioned_path(rest),
+    }
+  } } } }
+}
+
+# Returns the path tail after the /ocpi/{version}/ segment for one of
+# the three supported versions, or None when the path doesn't carry
+# a recognized version prefix.
+fn strip_version_prefix(path :: Str) -> Option[Str] {
+  if str.starts_with(path, "/ocpi/2.1.1/") {
+    Some(str.slice(path, str.len("/ocpi/2.1.1/"), str.len(path)))
+  } else { if str.starts_with(path, "/ocpi/2.2.1/") {
+    Some(str.slice(path, str.len("/ocpi/2.2.1/"), str.len(path)))
+  } else { if str.starts_with(path, "/ocpi/2.3.0/") {
+    Some(str.slice(path, str.len("/ocpi/2.3.0/"), str.len(path)))
+  } else {
+    None
+  } } }
+}
+
+fn map_versioned_path(rest :: Str) -> Option[RouteHit] {
+  if rest == "locations" {
     Some({ module: mid.locations(), params: map.new() })
-  } else { if str.starts_with(path, "/ocpi/2.2.1/locations/") {
-    let loc_id := str.slice(path, str.len("/ocpi/2.2.1/locations/"),
-                            str.len(path))
+  } else { if str.starts_with(rest, "locations/") {
+    let loc_id := str.slice(rest, str.len("locations/"), str.len(rest))
     Some({
       module: "location_by_id",
       params: map.set(map.new(), "location_id", loc_id),
     })
-  } else { if path == "/ocpi/2.2.1/sessions" {
+  } else { if rest == "sessions" {
     Some({ module: mid.sessions(), params: map.new() })
-  } else { if path == "/ocpi/2.2.1/cdrs" {
+  } else { if rest == "cdrs" {
     Some({ module: mid.cdrs(), params: map.new() })
-  } else { if path == "/ocpi/2.2.1/tariffs" {
+  } else { if rest == "tariffs" {
     Some({ module: mid.tariffs(), params: map.new() })
-  } else { if str.starts_with(path, "/ocpi/2.2.1/tokens/") {
-    # /ocpi/2.2.1/tokens/{cc}/{pid}/{uid} — the handler doesn't
-    # need the per-segment params for the dummy ack; pass the
-    # tail-path through opaquely.
-    let suffix := str.slice(path, str.len("/ocpi/2.2.1/tokens/"),
-                            str.len(path))
+  } else { if str.starts_with(rest, "tokens/") {
+    let suffix := str.slice(rest, str.len("tokens/"), str.len(rest))
     Some({
       module: "tokens_by_id",
       params: map.set(map.new(), "token_path", suffix),
     })
-  } else { if str.starts_with(path, "/ocpi/2.2.1/commands/") {
-    let cmd := str.slice(path, str.len("/ocpi/2.2.1/commands/"),
-                          str.len(path))
+  } else { if str.starts_with(rest, "commands/") {
+    let cmd := str.slice(rest, str.len("commands/"), str.len(rest))
     Some({
       module: mid.commands(),
       params: map.set(map.new(), "command", cmd),
     })
   } else {
     None
-  } } } } } } } } }
+  } } } } } } }
 }
 
 fn ocpi_request(
@@ -402,6 +459,6 @@ fn ocpi_request(
 # ---- Entry point ------------------------------------------------
 
 fn main() -> [net, io, time] Nil {
-  let _ := io.print("CPO v2.2.1  http://localhost:9100/ocpi/versions")
+  let _ := io.print("CPO v2.1.1/2.2.1/2.3.0  http://localhost:9100/ocpi/versions")
   net.serve_fn(9100, handle)
 }
