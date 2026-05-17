@@ -33,6 +33,7 @@ import "../src/versions"        as versions
 import "../src/module_id"       as mid
 import "../src/pagination"      as pagination
 import "../src/filters"         as filters
+import "../src/credentials"     as credentials
 
 # ---- Static configuration ---------------------------------------
 
@@ -331,7 +332,8 @@ fn registry() -> oroute.Registry {
          oroute.handler(r, oroute.post(), mid.commands(), post_command)
        }
     |> fn (r :: oroute.Registry) -> oroute.Registry {
-         oroute.handler(r, oroute.post(), mid.credentials(), post_credentials)
+         oroute.handler_with_schema(r, oroute.post(), mid.credentials(),
+           credentials.validate_credentials_v221, post_credentials)
        }
 }
 

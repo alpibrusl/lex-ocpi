@@ -382,6 +382,32 @@ fn case_credentials_post_returns_ok() -> cc.Case {
   }
 }
 
+# Parseable but schema-invalid: a credentials POST missing the
+# required `token` field. Receiver MUST surface this as a 2001
+# envelope with the violation list under `data` (per the validator
+# the route registers).
+fn case_credentials_missing_field_returns_2001() -> cc.Case {
+  {
+    name: "POST /ocpi/2.2.1/credentials without `token` returns OCPI 2001",
+    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+      let body := jv.stringify(JObj([
+        ("url",   JStr("http://localhost:9101/ocpi/versions")),
+        ("roles", JList([
+          JObj([
+            ("role",             JStr("EMSP")),
+            ("business_details", JObj([("name", JStr("Example eMSP"))])),
+            ("country_code",     JStr("DE")),
+            ("party_id",         JStr("ABC")),
+          ]),
+        ])),
+      ]))
+      assert_ocpi_status(
+        client.post_json(cc.module_url(cfg, "credentials"), body, cfg.token),
+        2001, "credentials-missing-token")
+    },
+  }
+}
+
 # ---- CPO-as-receiver: Tokens PUT + Commands POST ---------------
 
 fn case_put_token_returns_ok() -> cc.Case {
@@ -619,6 +645,7 @@ fn suite_v221() -> List[cc.Case] {
     case_unsupported_version_returns_3002(),
     case_malformed_json_returns_2001(),
     case_credentials_post_returns_ok(),
+    case_credentials_missing_field_returns_2001(),
     case_put_token_returns_ok(),
     case_post_command_returns_accepted(),
     case_locations_emits_x_total_count(),
