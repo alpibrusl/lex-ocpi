@@ -1,17 +1,28 @@
 # lex-ocpi — OCPI CPO conformance harness binary (issue #10)
 #
-# Drives a CPO under test through a v2.2.1 subset and asserts every
-# response is spec-shaped. The pure assertions live in
-# `src/conformance.lex`; the live HTTP loop lives here.
+# Drives a CPO under test through OCPI 2.1.1 / 2.2.1 / 2.3.0
+# subsets and asserts every response is spec-shaped. The pure
+# assertions live in `src/conformance.lex`; the live HTTP loop
+# lives here.
 #
-# Two entry points, same suite:
+# Entry points:
 #
-#   main      — human-readable PASS/FAIL lines + rollup
-#   main_json — single-line JSON document for CI dashboards
+#   main       — full v2.2.1 suite, human-readable
+#   main_json  — full v2.2.1 suite, single-line JSON
+#   main_v211  — minimal cross-version suite against v2.1.1
+#   main_v230  — minimal cross-version suite against v2.3.0
+#
+# The cross-version subset runs only the cases whose URL shape
+# and response shape are identical across the three versions
+# (Versions, version_detail, Locations). Tokens-authorize and
+# Commands have spec-level URL deltas across v2.1.1 vs the others
+# and live in their own per-version cases (out of scope for the
+# subset).
 #
 # Run:
 #   lex run --allow-effects net,io,time conformance/cpo_harness.lex main
-#   lex run --allow-effects net,io,time conformance/cpo_harness.lex main_json
+#   lex run --allow-effects net,io,time conformance/cpo_harness.lex main_v211
+#   lex run --allow-effects net,io,time conformance/cpo_harness.lex main_v230
 
 import "std.io"   as io
 import "std.int"  as int
@@ -60,7 +71,7 @@ fn case_versions_data_is_list() -> cc.Case {
 
 fn case_version_detail_returns_ok() -> cc.Case {
   {
-    name: "GET /ocpi/2.2.1 returns 1000 envelope (version detail)",
+    name: "GET /ocpi/{version} returns 1000 envelope (version detail)",
     run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
       match client.get_with_token(cc.version_detail_url(cfg), cfg.token) {
         Ok(_)  => CasePass,
@@ -72,7 +83,7 @@ fn case_version_detail_returns_ok() -> cc.Case {
 
 fn case_locations_list_returns_ok() -> cc.Case {
   {
-    name: "GET /ocpi/2.2.1/locations returns 1000 envelope",
+    name: "GET /ocpi/{version}/locations returns 1000 envelope",
     run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
       match client.get_with_token(cc.module_url(cfg, "locations"), cfg.token) {
         Ok(_)  => CasePass,
@@ -84,7 +95,7 @@ fn case_locations_list_returns_ok() -> cc.Case {
 
 fn case_location_known_has_country_code() -> cc.Case {
   {
-    name: "GET /ocpi/2.2.1/locations/LOC1 has country_code = NL",
+    name: "GET /ocpi/{version}/locations/LOC1 has country_code = NL",
     run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
       let url := cc.module_item_url(cfg, "locations", "LOC1")
       match client.get_with_token(url, cfg.token) {
@@ -112,7 +123,7 @@ fn check_country_code(data :: jv.Json, want :: Str) -> cc.CaseResult {
 
 fn case_location_known_has_evses() -> cc.Case {
   {
-    name: "GET /ocpi/2.2.1/locations/LOC1 has non-empty `evses` array",
+    name: "GET /ocpi/{version}/locations/LOC1 has non-empty `evses` array",
     run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
       let url := cc.module_item_url(cfg, "locations", "LOC1")
       match client.get_with_token(url, cfg.token) {
@@ -139,7 +150,7 @@ fn check_has_non_empty_list(data :: jv.Json, field :: Str) -> cc.CaseResult {
 
 fn case_location_unknown_returns_2003() -> cc.Case {
   {
-    name: "GET /ocpi/2.2.1/locations/LOC9 returns OCPI 2003",
+    name: "GET /ocpi/{version}/locations/LOC9 returns OCPI 2003",
     run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
       let url := cc.module_item_url(cfg, "locations", "LOC9")
       match client.get_with_token(url, cfg.token) {
@@ -307,19 +318,7 @@ fn case_malformed_auth_returns_2000() -> cc.Case {
 }
 
 # ---- CPO-as-receiver: Tokens PUT + Commands POST ---------------
-#
-# These exercise the CPO's RECEIVER endpoints — the inverse of
-# Locations / Sessions / CDRs / Tariffs. An eMSP pushes its Token
-# catalogue to the CPO (PUT) and asks the CPO to act on a charge
-# session (POST commands).
 
-# PUT-method tests are blocked on std.http: both `client.put_json`
-# (PUT + body) and a bodyless `client.send` over `base_request("PUT", url)`
-# return `transport: http.send transport error` against the fake
-# CPO, while POST to the same server works (case below PASSes).
-# Server-side, the `(PUT, "tokens_by_id")` route IS wired and
-# would be exercised end-to-end if the client could send a PUT.
-# Filed as upstream stdlib follow-up; case is SKIP until that lands.
 fn case_put_token_returns_ok() -> cc.Case {
   {
     name: "PUT /ocpi/2.2.1/tokens/DE/ABC/RFID-A returns 1000 envelope",
@@ -376,9 +375,10 @@ fn check_command_result(data :: jv.Json, want :: Str) -> cc.CaseResult {
   }
 }
 
-# ---- Suite + runner -------------------------------------------
+# ---- Suites ---------------------------------------------------
 
-fn suite() -> List[cc.Case] {
+# Full v2.2.1 surface: everything exercisable against the fake CPO.
+fn suite_v221() -> List[cc.Case] {
   [
     case_versions_returns_ok(),
     case_versions_data_is_list(),
@@ -400,25 +400,72 @@ fn suite() -> List[cc.Case] {
   ]
 }
 
-fn default_target() -> cc.TargetConfig {
+# Cross-version subset: cases whose URL shape + response shape are
+# identical across v2.1.1 / v2.2.1 / v2.3.0. Sessions / CDRs /
+# Tariffs / Tokens / Commands have per-version URL deltas and
+# don't fit — those need version-specific case suites if needed.
+fn suite_cross_version() -> List[cc.Case] {
+  [
+    case_versions_returns_ok(),
+    case_versions_data_is_list(),
+    case_version_detail_returns_ok(),
+    case_locations_list_returns_ok(),
+    case_location_known_has_country_code(),
+    case_location_known_has_evses(),
+    case_location_unknown_returns_2003(),
+  ]
+}
+
+# ---- Entry points ---------------------------------------------
+
+fn default_v221() -> cc.TargetConfig {
   { base_url: "http://localhost:9100/ocpi",
     token:    "cpo-secret",
     version:  "2.2.1" }
 }
 
-fn main() -> [net, io] Int {
-  let cfg := default_target()
-  let summary := cc.run_suite(suite(), cfg)
-  let _ := io.print("=== lex-ocpi CPO conformance harness ===")
+fn default_v211() -> cc.TargetConfig {
+  { base_url: "http://localhost:9100/ocpi",
+    token:    "cpo-secret",
+    version:  "2.1.1" }
+}
+
+fn default_v230() -> cc.TargetConfig {
+  { base_url: "http://localhost:9100/ocpi",
+    token:    "cpo-secret",
+    version:  "2.3.0" }
+}
+
+fn run_and_report(
+  banner :: Str,
+  suite  :: List[cc.Case],
+  cfg    :: cc.TargetConfig
+) -> [net, io] Int {
+  let summary := cc.run_suite(suite, cfg)
+  let _ := io.print(banner)
   let _ := list.map(cc.text_lines(summary),
     fn (s :: Str) -> [io] Unit { io.print(s) })
   let _ := io.print(cc.rollup(summary))
   if summary.failed > 0 { 1 / 0 } else { 0 }
 }
 
+fn main() -> [net, io] Int {
+  run_and_report("=== lex-ocpi CPO conformance harness (v2.2.1) ===",
+    suite_v221(), default_v221())
+}
+
 fn main_json() -> [net, io] Int {
-  let cfg := default_target()
-  let summary := cc.run_suite(suite(), cfg)
+  let summary := cc.run_suite(suite_v221(), default_v221())
   let _ := io.print(cc.to_json_str(summary))
   if summary.failed > 0 { 1 / 0 } else { 0 }
+}
+
+fn main_v211() -> [net, io] Int {
+  run_and_report("=== lex-ocpi CPO conformance harness (v2.1.1) ===",
+    suite_cross_version(), default_v211())
+}
+
+fn main_v230() -> [net, io] Int {
+  run_and_report("=== lex-ocpi CPO conformance harness (v2.3.0) ===",
+    suite_cross_version(), default_v230())
 }
