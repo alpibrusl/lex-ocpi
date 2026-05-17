@@ -6,7 +6,11 @@ lex     = "0.9.5"
 # OCPI (Open Charge Point Interface) library for lex-lang.
 #
 # Pairs with:
-#   lex-schema  — pydantic-style request validators (path = "../lex-schema")
+#   lex-schema  — pydantic-style request validators (path = "../lex-schema").
+#                 Both this package and lex-orm resolve lex-schema via
+#                 path so they share a single content-addressed copy
+#                 — otherwise cross-package calls fail with
+#                 schema_<hash1>.ModelSchema vs schema_<hash2>.ModelSchema.
 #   lex-orm     — typed query builder + migration runner; provides
 #                 the typed `Repo[T]` instances + migrations consumed
 #                 by `src/repo/*.lex` (see issue #6).
