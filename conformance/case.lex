@@ -16,12 +16,6 @@ import "std.str"  as str
 import "../src/client" as client
 
 # ---- TargetConfig ---------------------------------------------
-#
-# Everything a harness needs to point at a peer. `base_url` is the
-# `/ocpi` root — cases derive per-version paths from
-# `base_url + "/" + version + "/locations"`, etc. `token` is the
-# credentials token the harness presents; the peer authenticates
-# us with it.
 
 type TargetConfig = {
   base_url :: Str,
@@ -62,16 +56,11 @@ type Case = {
   run  :: (TargetConfig) -> [net] CaseResult,
 }
 
-# Run a case. Trivial wrapper but keeps the call site readable.
 fn run_case(c :: Case, cfg :: TargetConfig) -> [net] CaseResult {
   (c.run)(cfg)
 }
 
 # ---- Error rendering ------------------------------------------
-#
-# `client.ClientError` is the failure path for every `client.*`
-# call; cases need to render it consistently in their FailReason
-# strings so the harness report is grep-friendly.
 
 fn client_error_short(e :: client.ClientError) -> Str {
   match e {
@@ -82,39 +71,47 @@ fn client_error_short(e :: client.ClientError) -> Str {
   }
 }
 
-# ---- Suite summary --------------------------------------------
+# ---- Summary + single-pass runner -----------------------------
 #
-# `summarize` walks a parallel List[Case] + List[CaseResult] to
-# produce per-case status lines + a Passed/N rollup. Each harness's
-# `main` prints the summary and exits 0 / non-zero based on it.
+# Single-pass over the case list — std.list in lex 0.9.5 has no
+# `zip`, so the harness folds cases and results together in one
+# walk. Each iteration runs the case under [net] and accumulates
+# into the running summary.
 
 type Summary = {
-  passed :: Int,
-  failed :: Int,
+  passed  :: Int,
+  failed  :: Int,
   skipped :: Int,
-  total :: Int,
-  lines :: List[Str],
+  total   :: Int,
+  lines   :: List[Str],
 }
 
-fn summarize(cases :: List[Case], results :: List[CaseResult]) -> Summary {
-  let pairs := list.zip(cases, results)
-  list.fold(pairs, { passed: 0, failed: 0, skipped: 0, total: 0, lines: [] },
-    fn (acc :: Summary, p :: (Case, CaseResult)) -> Summary {
-      let c := match p { (cc, _) => cc }
-      let r := match p { (_, rr) => rr }
-      let line := render_line(c.name, r)
-      match r {
-        CasePass    => { passed: acc.passed + 1, failed: acc.failed,
-                         skipped: acc.skipped, total: acc.total + 1,
-                         lines: list.concat(acc.lines, [line]) },
-        CaseFail(_) => { passed: acc.passed, failed: acc.failed + 1,
-                         skipped: acc.skipped, total: acc.total + 1,
-                         lines: list.concat(acc.lines, [line]) },
-        CaseSkip(_) => { passed: acc.passed, failed: acc.failed,
-                         skipped: acc.skipped + 1, total: acc.total + 1,
-                         lines: list.concat(acc.lines, [line]) },
-      }
+fn empty_summary() -> Summary {
+  { passed: 0, failed: 0, skipped: 0, total: 0, lines: [] }
+}
+
+fn run_suite(cases :: List[Case], cfg :: TargetConfig) -> [net] Summary {
+  list.fold(cases, empty_summary(),
+    fn (acc :: Summary, c :: Case) -> [net] Summary {
+      let r := run_case(c, cfg)
+      accumulate(acc, c.name, r)
     })
+}
+
+fn accumulate(acc :: Summary, name :: Str, r :: CaseResult) -> Summary {
+  let line := render_line(name, r)
+  let lines := list.concat(acc.lines, [line])
+  match r {
+    CasePass    => { passed: acc.passed + 1, failed: acc.failed,
+                     skipped: acc.skipped, total: acc.total + 1,
+                     lines: lines },
+    CaseFail(_) => { passed: acc.passed, failed: acc.failed + 1,
+                     skipped: acc.skipped, total: acc.total + 1,
+                     lines: lines },
+    CaseSkip(_) => { passed: acc.passed, failed: acc.failed,
+                     skipped: acc.skipped + 1, total: acc.total + 1,
+                     lines: lines },
+  }
 }
 
 fn render_line(name :: Str, r :: CaseResult) -> Str {

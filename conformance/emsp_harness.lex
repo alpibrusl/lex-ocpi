@@ -79,13 +79,10 @@ fn default_target() -> cc.TargetConfig {
 
 fn main() -> [net, io] Int {
   let cfg := default_target()
-  let cases := suite()
-  let results := list.map(cases,
-    fn (c :: cc.Case) -> [net] cc.CaseResult { cc.run_case(c, cfg) })
-  let summary := cc.summarize(cases, results)
+  let summary := cc.run_suite(suite(), cfg)
   let _ := io.print("=== lex-ocpi eMSP conformance harness ===")
   let _ := list.map(summary.lines,
     fn (s :: Str) -> [io] Unit { io.print(s) })
   let _ := io.print(cc.rollup(summary))
-  if summary.failed > 0 { 1 } else { 0 }
+  if summary.failed > 0 { 1 / 0 } else { 0 }
 }

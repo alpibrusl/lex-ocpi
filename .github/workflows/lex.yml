@@ -37,8 +37,6 @@ jobs:
         run: |
           set -euo pipefail
           ARCHIVE="lex-${LEX_VERSION}-${LEX_TARGET}.tar.gz"
-          # --retry handles transient release-CDN propagation hiccups
-          # right after a fresh tag is pushed (we hit one on v0.9.5).
           curl -sSfL --retry 5 --retry-delay 3 --retry-all-errors \
             "https://github.com/alpibrusl/lex-lang/releases/download/${LEX_VERSION}/${ARCHIVE}" \
             -o "${ARCHIVE}"
@@ -77,10 +75,12 @@ jobs:
       - name: Conformance harness against the fake CPO example
         working-directory: lex-ocpi
         run: |
-          set -euo pipefail
+          set -uo pipefail
           # Start the fake CPO server in the background.
           lex run --allow-effects net,io,time examples/cpo_v221.lex main &
           SERVER_PID=$!
+          # Kill the server on any exit (success, failure, or signal).
+          trap 'kill ${SERVER_PID} 2>/dev/null || true' EXIT
           # Poll until the server is up (max 5s).
           for i in $(seq 1 50); do
             if curl -sf http://localhost:9100/ocpi/versions > /dev/null; then
@@ -88,8 +88,6 @@ jobs:
             fi
             sleep 0.1
           done
-          # Run the conformance harness against it.
+          # Run the conformance harness against it. Exit code
+          # propagates out of the step.
           lex run --allow-effects net,io conformance/cpo_harness.lex main
-          HARNESS_EXIT=$?
-          kill $SERVER_PID 2>/dev/null || true
-          exit $HARNESS_EXIT
