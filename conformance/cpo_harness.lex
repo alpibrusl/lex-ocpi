@@ -676,6 +676,85 @@ fn and_then(first :: cc.CaseResult, second :: () -> cc.CaseResult) -> cc.CaseRes
   }
 }
 
+# ---- v2.2.1+ module deltas: chargingprofiles, hubclientinfo --
+#
+# These modules were added in v2.2.1; the v2.3.0 spec adds Payments
+# on top. The fake CPO advertises all three under v2.3.0 (and the
+# first two under v2.2.1) so the harness can exercise each as a
+# happy-path list GET.
+
+fn case_chargingprofiles_list_returns_ok() -> cc.Case {
+  {
+    name: "GET /ocpi/{version}/chargingprofiles returns 1000 envelope",
+    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+      match client.get_with_token(cc.module_url(cfg, "chargingprofiles"), cfg.token) {
+        Ok(_)  => CasePass,
+        Err(e) => CaseFail(cc.client_error_short(e)),
+      }
+    },
+  }
+}
+
+fn case_hubclientinfo_list_returns_ok() -> cc.Case {
+  {
+    name: "GET /ocpi/{version}/hubclientinfo returns 1000 envelope",
+    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+      match client.get_with_token(cc.module_url(cfg, "hubclientinfo"), cfg.token) {
+        Ok(_)  => CasePass,
+        Err(e) => CaseFail(cc.client_error_short(e)),
+      }
+    },
+  }
+}
+
+fn case_payments_list_returns_ok() -> cc.Case {
+  {
+    name: "GET /ocpi/{version}/payments returns 1000 envelope (v2.3.0)",
+    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+      match client.get_with_token(cc.module_url(cfg, "payments"), cfg.token) {
+        Ok(_)  => CasePass,
+        Err(e) => CaseFail(cc.client_error_short(e)),
+      }
+    },
+  }
+}
+
+# v2.3.0 version_detail advertises Payments on top of the v2.2.1
+# module set. Asserts the catalogue is honest about what the fake
+# CPO serves.
+fn case_v230_detail_lists_payments() -> cc.Case {
+  {
+    name: "GET /ocpi/2.3.0 version_detail advertises `payments`",
+    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+      match client.get_with_token(cc.version_detail_url(cfg), cfg.token) {
+        Err(e)   => CaseFail(cc.client_error_short(e)),
+        Ok(data) => check_detail_advertises(data, "payments"),
+      }
+    },
+  }
+}
+
+fn check_detail_advertises(data :: jv.Json, want :: Str) -> cc.CaseResult {
+  match jv.get_field(data, "endpoints") {
+    None    => CaseFail("version_detail missing `endpoints`"),
+    Some(v) => match jv.as_list(v) {
+      None    => CaseFail("`endpoints` is not a list"),
+      Some(l) => if list.fold(l, false,
+                   fn (acc :: Bool, ep :: jv.Json) -> Bool {
+                     if acc { true }
+                     else { match jv.get_field(ep, "identifier") {
+                       None    => false,
+                       Some(i) => match jv.as_str(i) {
+                         None    => false,
+                         Some(s) => s == want,
+                       },
+                     } }
+                   }) { CasePass }
+                 else { CaseFail(str.concat("`endpoints` does not advertise ", want)) },
+    },
+  }
+}
+
 # ---- Suites ---------------------------------------------------
 
 fn suite_v221() -> List[cc.Case] {
@@ -708,6 +787,20 @@ fn suite_v221() -> List[cc.Case] {
     case_locations_last_page_has_no_link(),
     case_locations_date_from_filters(),
     case_locations_date_to_filters(),
+    case_chargingprofiles_list_returns_ok(),
+    case_hubclientinfo_list_returns_ok(),
+  ]
+}
+
+# v2.3.0-only module deltas: Payments + version_detail catalogue.
+# Layered on top of `suite_cross_version` (which is shared by
+# v2.1.1 / v2.3.0) for the main_v230 entry point.
+fn suite_v230_modules() -> List[cc.Case] {
+  [
+    case_chargingprofiles_list_returns_ok(),
+    case_hubclientinfo_list_returns_ok(),
+    case_payments_list_returns_ok(),
+    case_v230_detail_lists_payments(),
   ]
 }
 
@@ -774,5 +867,5 @@ fn main_v211() -> [net, io] Int {
 
 fn main_v230() -> [net, io] Int {
   run_and_report("=== lex-ocpi CPO conformance harness (v2.3.0) ===",
-    suite_cross_version(), default_v230())
+    list.concat(suite_cross_version(), suite_v230_modules()), default_v230())
 }
