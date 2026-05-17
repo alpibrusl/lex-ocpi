@@ -13,6 +13,8 @@ import "std.int"  as int
 import "std.list" as list
 import "std.str"  as str
 
+import "lex-schema/json_value" as jv
+
 import "../src/client" as client
 
 # ---- TargetConfig ---------------------------------------------
@@ -71,6 +73,18 @@ fn client_error_short(e :: client.ClientError) -> Str {
   }
 }
 
+# ---- Per-case record ------------------------------------------
+#
+# Source of truth for what happened in a case. The text/JSON
+# renderers are pure derivations of `records`; one walk, two
+# output shapes — callers choose by calling `text_lines` or
+# `to_json` on the same Summary.
+
+type CaseRecord = {
+  name   :: Str,
+  result :: CaseResult,
+}
+
 # ---- Summary + single-pass runner -----------------------------
 #
 # Single-pass over the case list — std.list in lex 0.9.5 has no
@@ -83,11 +97,11 @@ type Summary = {
   failed  :: Int,
   skipped :: Int,
   total   :: Int,
-  lines   :: List[Str],
+  records :: List[CaseRecord],
 }
 
 fn empty_summary() -> Summary {
-  { passed: 0, failed: 0, skipped: 0, total: 0, lines: [] }
+  { passed: 0, failed: 0, skipped: 0, total: 0, records: [] }
 }
 
 fn run_suite(cases :: List[Case], cfg :: TargetConfig) -> [net] Summary {
@@ -99,19 +113,26 @@ fn run_suite(cases :: List[Case], cfg :: TargetConfig) -> [net] Summary {
 }
 
 fn accumulate(acc :: Summary, name :: Str, r :: CaseResult) -> Summary {
-  let line := render_line(name, r)
-  let lines := list.concat(acc.lines, [line])
+  let records := list.concat(acc.records, [{ name: name, result: r }])
   match r {
     CasePass    => { passed: acc.passed + 1, failed: acc.failed,
                      skipped: acc.skipped, total: acc.total + 1,
-                     lines: lines },
+                     records: records },
     CaseFail(_) => { passed: acc.passed, failed: acc.failed + 1,
                      skipped: acc.skipped, total: acc.total + 1,
-                     lines: lines },
+                     records: records },
     CaseSkip(_) => { passed: acc.passed, failed: acc.failed,
                      skipped: acc.skipped + 1, total: acc.total + 1,
-                     lines: lines },
+                     records: records },
   }
+}
+
+# ---- Text rendering ------------------------------------------
+
+fn text_lines(s :: Summary) -> List[Str] {
+  list.map(s.records, fn (r :: CaseRecord) -> Str {
+    render_line(r.name, r.result)
+  })
 }
 
 fn render_line(name :: Str, r :: CaseResult) -> Str {
@@ -130,4 +151,56 @@ fn rollup(s :: Summary) -> Str {
           str.concat("  FAILED ",
             str.concat(int.to_str(s.failed),
               str.concat("  SKIPPED ", int.to_str(s.skipped))))))))
+}
+
+# ---- JSON rendering ------------------------------------------
+#
+# `to_json` produces a structured report:
+#
+#   {
+#     "summary": { "passed": N, "failed": N, "skipped": N, "total": N },
+#     "cases":   [ { "name": "…", "status": "PASS" }, … ]
+#   }
+#
+# Each case entry carries `name` + `status`; FAIL / SKIP entries
+# additionally carry `message`. `to_json_str` is the convenience
+# stringifier the harness mains call.
+
+fn to_json(s :: Summary) -> jv.Json {
+  JObj([
+    ("summary", summary_to_json(s)),
+    ("cases",   JList(list.map(s.records, record_to_json))),
+  ])
+}
+
+fn summary_to_json(s :: Summary) -> jv.Json {
+  JObj([
+    ("passed",  JInt(s.passed)),
+    ("failed",  JInt(s.failed)),
+    ("skipped", JInt(s.skipped)),
+    ("total",   JInt(s.total)),
+  ])
+}
+
+fn record_to_json(r :: CaseRecord) -> jv.Json {
+  match r.result {
+    CasePass     => JObj([
+                       ("name",   JStr(r.name)),
+                       ("status", JStr("PASS")),
+                     ]),
+    CaseFail(m)  => JObj([
+                       ("name",    JStr(r.name)),
+                       ("status",  JStr("FAIL")),
+                       ("message", JStr(m)),
+                     ]),
+    CaseSkip(m)  => JObj([
+                       ("name",    JStr(r.name)),
+                       ("status",  JStr("SKIP")),
+                       ("message", JStr(m)),
+                     ]),
+  }
+}
+
+fn to_json_str(s :: Summary) -> Str {
+  jv.stringify(to_json(s))
 }

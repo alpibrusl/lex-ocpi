@@ -14,8 +14,14 @@
 # the CI loop spawns that server on port 9101 before invoking the
 # harness.
 #
+# Two entry points, same suite:
+#
+#   main      — human-readable PASS/FAIL lines + rollup
+#   main_json — single-line JSON document for CI dashboards
+#
 # Run:
 #   lex run --allow-effects net,io,time conformance/emsp_harness.lex main
+#   lex run --allow-effects net,io,time conformance/emsp_harness.lex main_json
 
 import "std.io"   as io
 import "std.list" as list
@@ -144,8 +150,19 @@ fn main() -> [net, io] Int {
   let cfg := default_target()
   let summary := cc.run_suite(suite(), cfg)
   let _ := io.print("=== lex-ocpi eMSP conformance harness ===")
-  let _ := list.map(summary.lines,
+  let _ := list.map(cc.text_lines(summary),
     fn (s :: Str) -> [io] Unit { io.print(s) })
   let _ := io.print(cc.rollup(summary))
+  if summary.failed > 0 { 1 / 0 } else { 0 }
+}
+
+# Machine-readable variant. Emits a single-line JSON document with
+# the per-case breakdown + counts; useful for CI dashboards that
+# parse stdout. Exit code matches `main`: non-zero iff any case
+# failed.
+fn main_json() -> [net, io] Int {
+  let cfg := default_target()
+  let summary := cc.run_suite(suite(), cfg)
+  let _ := io.print(cc.to_json_str(summary))
   if summary.failed > 0 { 1 / 0 } else { 0 }
 }
