@@ -13,15 +13,18 @@
 # Run:
 #   lex run --allow-effects net,io,time conformance/cpo_harness.lex main
 
-import "std.io"   as io
-import "std.int"  as int
-import "std.list" as list
-import "std.str"  as str
-import "std.http" as http
+import "std.io"    as io
+import "std.int"   as int
+import "std.list"  as list
+import "std.map"   as map
+import "std.str"   as str
+import "std.http"  as http
+import "std.bytes" as bytes
 
 import "lex-schema/json_value" as jv
 
-import "../src/client" as client
+import "../src/client"   as client
+import "../src/envelope" as env
 
 import "./case" as cc
 
@@ -437,6 +440,162 @@ fn check_command_result(data :: jv.Json, want :: Str) -> cc.CaseResult {
   }
 }
 
+# ---- Pagination contract --------------------------------------
+#
+# OCPI Part I §4.3: list endpoints emit `X-Total-Count`, honor
+# `?offset=N&limit=M`, advertise the next page via
+# `Link: <…>; rel="next"` when one exists, and filter the result
+# set with `?date_from=ISO8601&date_to=ISO8601`. The fake CPO ships
+# six Locations whose `last_updated` covers three days; these cases
+# walk every dimension of that contract end-to-end.
+
+type RawResponse = {
+  status  :: Int,
+  headers :: Map[Str, Str],
+  body    :: jv.Json,
+}
+
+fn send_raw(req :: HttpRequest) -> [net] Result[RawResponse, Str] {
+  match http.send(req) {
+    Err(_)   => Err("transport: http.send transport error"),
+    Ok(resp) => match bytes.to_str(resp.body) {
+      Err(e) => Err(str.concat("body not utf-8: ", e)),
+      Ok(s)  => match jv.parse(s) {
+        Err(pe) => Err(str.concat("body not JSON: ", pe.message)),
+        Ok(j)   => Ok({ status: resp.status, headers: resp.headers, body: j }),
+      },
+    },
+  }
+}
+
+fn raw_get(url :: Str, token :: Str) -> [net] Result[RawResponse, Str] {
+  send_raw(client.with_token(client.base_request("GET", url), token))
+}
+
+fn case_locations_emits_x_total_count() -> cc.Case {
+  {
+    name: "GET /ocpi/2.2.1/locations carries X-Total-Count: 6",
+    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+      match raw_get(cc.module_url(cfg, "locations"), cfg.token) {
+        Err(m)   => CaseFail(m),
+        Ok(resp) => expect_header_eq(resp.headers, "x-total-count", "6"),
+      }
+    },
+  }
+}
+
+fn case_locations_limit_truncates_and_links_next() -> cc.Case {
+  {
+    name: "GET /ocpi/2.2.1/locations?limit=2 returns 2 items + Link rel=\"next\"",
+    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+      let url := str.concat(cc.module_url(cfg, "locations"), "?limit=2")
+      match raw_get(url, cfg.token) {
+        Err(m)   => CaseFail(m),
+        Ok(resp) => and_then(
+          expect_list_len(resp.body, 2),
+          fn () -> cc.CaseResult { expect_link_next(resp.headers, true) }),
+      }
+    },
+  }
+}
+
+fn case_locations_last_page_has_no_link() -> cc.Case {
+  {
+    name: "GET /ocpi/2.2.1/locations?offset=4&limit=2 omits Link rel=\"next\"",
+    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+      let url := str.concat(cc.module_url(cfg, "locations"),
+                            "?offset=4&limit=2")
+      match raw_get(url, cfg.token) {
+        Err(m)   => CaseFail(m),
+        Ok(resp) => and_then(
+          expect_list_len(resp.body, 2),
+          fn () -> cc.CaseResult { expect_link_next(resp.headers, false) }),
+      }
+    },
+  }
+}
+
+fn case_locations_date_from_filters() -> cc.Case {
+  {
+    name: "GET /ocpi/2.2.1/locations?date_from=2026-05-17 filters by last_updated",
+    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+      let url := str.concat(cc.module_url(cfg, "locations"),
+                            "?date_from=2026-05-17T00:00:00Z")
+      match raw_get(url, cfg.token) {
+        Err(m)   => CaseFail(m),
+        Ok(resp) => and_then(
+          expect_header_eq(resp.headers, "x-total-count", "2"),
+          fn () -> cc.CaseResult { expect_list_len(resp.body, 2) }),
+      }
+    },
+  }
+}
+
+fn case_locations_date_to_filters() -> cc.Case {
+  {
+    name: "GET /ocpi/2.2.1/locations?date_to=2026-05-15T12:00:00Z filters by last_updated",
+    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+      let url := str.concat(cc.module_url(cfg, "locations"),
+                            "?date_to=2026-05-15T12:00:00Z")
+      match raw_get(url, cfg.token) {
+        Err(m)   => CaseFail(m),
+        Ok(resp) => expect_header_eq(resp.headers, "x-total-count", "1"),
+      }
+    },
+  }
+}
+
+# ---- Pagination assertion helpers -----------------------------
+
+fn expect_header_eq(
+  headers :: Map[Str, Str],
+  name    :: Str,
+  want    :: Str
+) -> cc.CaseResult {
+  match map.get(headers, name) {
+    None     => CaseFail(str.concat("missing header: ", name)),
+    Some(v)  => if v == want { CasePass }
+                else { CaseFail(str.concat(name, str.concat("=", str.concat(v,
+                                str.concat(", want ", want))))) },
+  }
+}
+
+fn expect_link_next(headers :: Map[Str, Str], want_present :: Bool) -> cc.CaseResult {
+  let present := match map.get(headers, "link") {
+    None    => false,
+    Some(v) => str.contains(v, "rel=\"next\""),
+  }
+  if present == want_present { CasePass }
+  else { if want_present {
+    CaseFail("Link: rel=\"next\" header expected but missing")
+  } else {
+    CaseFail("Link: rel=\"next\" header present on last page")
+  } }
+}
+
+fn expect_list_len(body :: jv.Json, want :: Int) -> cc.CaseResult {
+  match jv.get_field(body, "data") {
+    None     => CaseFail("envelope missing `data`"),
+    Some(d)  => match jv.as_list(d) {
+      None    => CaseFail("`data` is not a list"),
+      Some(l) => if list.len(l) == want { CasePass }
+                 else { CaseFail(str.concat("data has ",
+                          str.concat(int.to_str(list.len(l)),
+                          str.concat(" items, want ", int.to_str(want))))) },
+    },
+  }
+}
+
+# Chain two assertions without nesting matches. First failure wins;
+# the second predicate is only checked when the first passes.
+fn and_then(first :: cc.CaseResult, second :: () -> cc.CaseResult) -> cc.CaseResult {
+  match first {
+    CasePass     => second(),
+    CaseFail(m)  => CaseFail(m),
+    CaseSkip(m)  => CaseSkip(m),
+  }
+}
+
 # ---- Suites ---------------------------------------------------
 
 fn suite_v221() -> List[cc.Case] {
@@ -462,6 +621,11 @@ fn suite_v221() -> List[cc.Case] {
     case_credentials_post_returns_ok(),
     case_put_token_returns_ok(),
     case_post_command_returns_accepted(),
+    case_locations_emits_x_total_count(),
+    case_locations_limit_truncates_and_links_next(),
+    case_locations_last_page_has_no_link(),
+    case_locations_date_from_filters(),
+    case_locations_date_to_filters(),
   ]
 }
 
