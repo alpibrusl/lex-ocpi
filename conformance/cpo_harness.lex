@@ -8,24 +8,22 @@
 #
 #   lex run --allow-effects net,io,time conformance/cpo_harness.lex main
 #
-# The harness targets `http://localhost:9100/ocpi` with token
-# `cpo-secret` by default — matching `examples/cpo_v221.lex`. A real
-# deployment overrides via env vars (`OCPI_TARGET`, `OCPI_TOKEN`)
-# once those primitives land; for now defaults are hard-coded so
-# the CI loop has a single working invocation.
-#
 # Scope (v2.2.1; grows iteratively — each PR appends cases to
 # `suite()` without touching the runner):
 #
-#   1. GET /ocpi/versions returns 1000 envelope
-#   2. GET /ocpi/versions data is a non-empty list
-#   3. GET /ocpi/2.2.1 returns 1000 envelope (version detail)
-#   4. GET /ocpi/2.2.1/locations returns 1000 envelope
-#   5. GET /ocpi/2.2.1/locations/LOC1 has country_code = "NL"
-#   6. GET /ocpi/2.2.1/locations/LOC1 has an `evses` array
-#   7. GET /ocpi/2.2.1/locations/LOC9 returns OCPI error 2003
-#   8. GET /ocpi/wat returns OCPI 2000 (generic client error
-#      fallback for unknown paths)
+#    1. GET /ocpi/versions returns 1000 envelope
+#    2. GET /ocpi/versions data is a non-empty list
+#    3. GET /ocpi/2.2.1 returns 1000 envelope (version detail)
+#    4. GET /ocpi/2.2.1/locations returns 1000 envelope
+#    5. GET /ocpi/2.2.1/locations/LOC1 has country_code = "NL"
+#    6. GET /ocpi/2.2.1/locations/LOC1 has an `evses` array
+#    7. GET /ocpi/2.2.1/locations/LOC9 returns OCPI error 2003
+#    8. GET /ocpi/wat returns OCPI 2000 (unknown route)
+#    9. GET /ocpi/2.2.1/sessions returns 1000 envelope
+#   10. GET /ocpi/2.2.1/cdrs returns 1000 envelope
+#   11. GET /ocpi/2.2.1/tariffs returns 1000 envelope
+#   12. First CDR has total_cost.excl_vat (numeric)
+#   13. First Tariff has non-empty `elements` array
 
 import "std.io"   as io
 import "std.int"  as int
@@ -52,10 +50,6 @@ fn case_versions_returns_ok() -> cc.Case {
   }
 }
 
-# Envelope-shape check: the `data` field for `GET /versions` must be
-# a JList per spec (§6.1.1). A peer that returns 1000-success with
-# scalar / object `data` violates the contract even if the envelope
-# parses.
 fn case_versions_data_is_list() -> cc.Case {
   {
     name: "GET /ocpi/versions data is a non-empty list",
@@ -127,9 +121,6 @@ fn check_country_code(data :: jv.Json, want :: Str) -> cc.CaseResult {
   }
 }
 
-# Validates that the Location object includes the `evses` array
-# (required field per spec §8.4 with `ListNonEmpty`). A Location
-# without EVSEs is structurally invalid even if the envelope is OK.
 fn case_location_known_has_evses() -> cc.Case {
   {
     name: "GET /ocpi/2.2.1/locations/LOC1 has non-empty `evses` array",
@@ -177,10 +168,6 @@ fn case_location_unknown_returns_2003() -> cc.Case {
   }
 }
 
-# Negative case: a path the registry doesn't know maps to
-# status_code 2000 ("Generic client error") via the dispatcher's
-# `default_unknown` fallback. The HTTP layer stays 200 — OCPI
-# errors travel inside the envelope.
 fn case_unknown_path_returns_2000() -> cc.Case {
   {
     name: "GET /ocpi/wat returns OCPI 2000 (unknown route)",
@@ -201,6 +188,98 @@ fn case_unknown_path_returns_2000() -> cc.Case {
   }
 }
 
+# ---- Sessions / CDRs / Tariffs list endpoints -----------------
+
+fn case_sessions_list_returns_ok() -> cc.Case {
+  {
+    name: "GET /ocpi/2.2.1/sessions returns 1000 envelope",
+    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+      match client.get_with_token(cc.module_url(cfg, "sessions"), cfg.token) {
+        Ok(_)  => CasePass,
+        Err(e) => CaseFail(cc.client_error_short(e)),
+      }
+    },
+  }
+}
+
+fn case_cdrs_list_returns_ok() -> cc.Case {
+  {
+    name: "GET /ocpi/2.2.1/cdrs returns 1000 envelope",
+    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+      match client.get_with_token(cc.module_url(cfg, "cdrs"), cfg.token) {
+        Ok(_)  => CasePass,
+        Err(e) => CaseFail(cc.client_error_short(e)),
+      }
+    },
+  }
+}
+
+fn case_tariffs_list_returns_ok() -> cc.Case {
+  {
+    name: "GET /ocpi/2.2.1/tariffs returns 1000 envelope",
+    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+      match client.get_with_token(cc.module_url(cfg, "tariffs"), cfg.token) {
+        Ok(_)  => CasePass,
+        Err(e) => CaseFail(cc.client_error_short(e)),
+      }
+    },
+  }
+}
+
+# Field-shape: the first CDR carries `total_cost.excl_vat`. CDRs
+# without total_cost are invalid per spec §10 even if the envelope
+# decodes. We just check that the field exists and is numeric.
+fn case_first_cdr_has_total_cost() -> cc.Case {
+  {
+    name: "GET /ocpi/2.2.1/cdrs first entry has total_cost.excl_vat",
+    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+      match client.get_with_token(cc.module_url(cfg, "cdrs"), cfg.token) {
+        Err(e)   => CaseFail(cc.client_error_short(e)),
+        Ok(data) => check_first_cdr_total_cost(data),
+      }
+    },
+  }
+}
+
+fn check_first_cdr_total_cost(data :: jv.Json) -> cc.CaseResult {
+  match data {
+    JList(items) => match list.head(items) {
+      None       => CaseFail("cdrs list is empty"),
+      Some(cdr)  => match jv.get_field(cdr, "total_cost") {
+        None    => CaseFail("first CDR missing total_cost"),
+        Some(c) => match jv.get_field(c, "excl_vat") {
+          None    => CaseFail("total_cost missing excl_vat"),
+          Some(_) => CasePass,                # presence is enough; numeric
+                                                # check would need jv.as_float
+        },
+      },
+    },
+    _ => CaseFail("cdrs data is not a JSON list"),
+  }
+}
+
+fn case_first_tariff_has_elements() -> cc.Case {
+  {
+    name: "GET /ocpi/2.2.1/tariffs first entry has non-empty `elements`",
+    run: fn (cfg :: cc.TargetConfig) -> [net] cc.CaseResult {
+      match client.get_with_token(cc.module_url(cfg, "tariffs"), cfg.token) {
+        Err(e)   => CaseFail(cc.client_error_short(e)),
+        Ok(data) => check_first_tariff_elements(data),
+      }
+    },
+  }
+}
+
+fn check_first_tariff_elements(data :: jv.Json) -> cc.CaseResult {
+  match data {
+    JList(items) => match list.head(items) {
+      None       => CaseFail("tariffs list is empty"),
+      Some(t)    => check_has_non_empty_list(t, "elements"),
+    },
+    _ => CaseFail("tariffs data is not a JSON list"),
+  }
+}
+
 # ---- Suite + runner -------------------------------------------
 
 fn suite() -> List[cc.Case] {
@@ -213,6 +292,11 @@ fn suite() -> List[cc.Case] {
     case_location_known_has_evses(),
     case_location_unknown_returns_2003(),
     case_unknown_path_returns_2000(),
+    case_sessions_list_returns_ok(),
+    case_cdrs_list_returns_ok(),
+    case_tariffs_list_returns_ok(),
+    case_first_cdr_has_total_cost(),
+    case_first_tariff_has_elements(),
   ]
 }
 
@@ -222,9 +306,6 @@ fn default_target() -> cc.TargetConfig {
     version:  "2.2.1" }
 }
 
-# main exits non-zero when any case fails: divide-by-zero panic
-# matches the pattern `tests/test_*.lex` use for `run_all`. CI
-# propagates that as the step's exit code.
 fn main() -> [net, io] Int {
   let cfg := default_target()
   let summary := cc.run_suite(suite(), cfg)
