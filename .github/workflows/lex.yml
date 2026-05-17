@@ -37,9 +37,12 @@ jobs:
         run: |
           set -euo pipefail
           ARCHIVE="lex-${LEX_VERSION}-${LEX_TARGET}.tar.gz"
-          curl -sSfL \
+          # --retry handles transient release-CDN propagation hiccups
+          # right after a fresh tag is pushed (we hit one on v0.9.5).
+          curl -sSfL --retry 5 --retry-delay 3 --retry-all-errors \
             "https://github.com/alpibrusl/lex-lang/releases/download/${LEX_VERSION}/${ARCHIVE}" \
-            | tar -xz
+            -o "${ARCHIVE}"
+          tar -xzf "${ARCHIVE}"
           sudo install -m 0755 "lex-${LEX_VERSION}-${LEX_TARGET}/lex" /usr/local/bin/lex
           lex --version
 
