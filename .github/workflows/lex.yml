@@ -88,6 +88,8 @@ jobs:
             fi
             sleep 0.1
           done
-          # Run the conformance harness against it. Exit code
-          # propagates out of the step.
-          lex run --allow-effects net,io conformance/cpo_harness.lex main
+          # Run the conformance harness against it. `time` is in the
+          # allow-list because src/client.lex's retry helpers carry
+          # `[time]` — the harness doesn't call them, but lex's
+          # effect checker scans every transitively-imported function.
+          lex run --allow-effects net,io,time conformance/cpo_harness.lex main
