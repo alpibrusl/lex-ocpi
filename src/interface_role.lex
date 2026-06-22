@@ -18,9 +18,15 @@
 
 import "std.list" as list
 
-fn sender()   -> Str { "SENDER" }
-fn receiver() -> Str { "RECEIVER" }
+fn sender() -> Str {
+  "SENDER"
+}
+
+fn receiver() -> Str {
+  "RECEIVER"
+}
 
 fn all_interface_roles() -> List[Str] {
   [sender(), receiver()]
 }
+

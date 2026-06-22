@@ -21,70 +21,70 @@
 import "std.list" as list
 
 # ---- Always-on configuration modules -----------------------------
+fn credentials() -> Str {
+  "credentials"
+}
 
-fn credentials() -> Str { "credentials" }
-fn versions()    -> Str { "versions" }
+fn versions() -> Str {
+  "versions"
+}
 
 # ---- Functional modules ------------------------------------------
+fn cdrs() -> Str {
+  "cdrs"
+}
 
-fn cdrs()              -> Str { "cdrs" }
-fn chargingprofiles()  -> Str { "chargingprofiles" }
-fn commands()          -> Str { "commands" }
-fn hubclientinfo()     -> Str { "hubclientinfo" }
-fn locations()         -> Str { "locations" }
-fn sessions()          -> Str { "sessions" }
-fn tariffs()           -> Str { "tariffs" }
-fn tokens()            -> Str { "tokens" }
+fn chargingprofiles() -> Str {
+  "chargingprofiles"
+}
+
+fn commands() -> Str {
+  "commands"
+}
+
+fn hubclientinfo() -> Str {
+  "hubclientinfo"
+}
+
+fn locations() -> Str {
+  "locations"
+}
+
+fn sessions() -> Str {
+  "sessions"
+}
+
+fn tariffs() -> Str {
+  "tariffs"
+}
+
+fn tokens() -> Str {
+  "tokens"
+}
 
 # ---- OCPI 2.3.0 additions ----------------------------------------
-
-fn payments() -> Str { "payments" }
+fn payments() -> Str {
+  "payments"
+}
 
 # ---- Bulk catalogs -----------------------------------------------
 #
 # Per-version module sets. The Credentials module is implicit (every
 # OCPI peer ships it), but it appears here too so the version-detail
 # `endpoints` array can list it explicitly.
-
 fn all_v211() -> List[Str] {
-  [
-    credentials(),
-    cdrs(),
-    commands(),
-    locations(),
-    sessions(),
-    tariffs(),
-    tokens(),
-  ]
+  [credentials(), cdrs(), commands(), locations(), sessions(), tariffs(), tokens()]
 }
 
 fn all_v221() -> List[Str] {
-  [
-    credentials(),
-    cdrs(),
-    chargingprofiles(),
-    commands(),
-    hubclientinfo(),
-    locations(),
-    sessions(),
-    tariffs(),
-    tokens(),
-  ]
+  [credentials(), cdrs(), chargingprofiles(), commands(), hubclientinfo(), locations(), sessions(), tariffs(), tokens()]
 }
 
 fn all_v230() -> List[Str] {
-  [
-    credentials(),
-    cdrs(),
-    chargingprofiles(),
-    commands(),
-    hubclientinfo(),
-    locations(),
-    payments(),
-    sessions(),
-    tariffs(),
-    tokens(),
-  ]
+  [credentials(), cdrs(), chargingprofiles(), commands(), hubclientinfo(), locations(), payments(), sessions(), tariffs(), tokens()]
 }
 
-fn all_modules() -> List[Str] { all_v230() }
+fn all_modules() -> List[Str] {
+  all_v230()
+}
+

@@ -55,3 +55,4 @@ fn indexes() -> List[m.DdlChange] {
 fn migrate(db :: conn.ConnDb) -> [sql] Result[Unit, dbe.DbErr] {
   mig.run_ddl(db, table_name(), schema(), indexes())
 }
+

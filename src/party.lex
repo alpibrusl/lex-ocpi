@@ -16,24 +16,20 @@
 #
 # Effects: none.
 
-import "std.str"  as str
+import "std.str" as str
+
 import "std.list" as list
 
 import "lex-schema/json_value" as jv
 
 # ---- Datatype ----------------------------------------------------
-
-type PartyId = {
-  country_code :: Str,
-  party_id     :: Str,
-}
+type PartyId = { country_code :: Str, party_id :: Str }
 
 fn new(country_code :: Str, party_id :: Str) -> PartyId {
   { country_code: country_code, party_id: party_id }
 }
 
 # ---- Equality ----------------------------------------------------
-
 fn eq(a :: PartyId, b :: PartyId) -> Bool {
   a.country_code == b.country_code and a.party_id == b.party_id
 }
@@ -43,12 +39,8 @@ fn eq(a :: PartyId, b :: PartyId) -> Bool {
 # `to_json` lays the pair down into a JSON object using OCPI's
 # canonical field names. Used by the Credentials module and as a
 # building block for compound objects that embed a party reference.
-
 fn to_json(p :: PartyId) -> jv.Json {
-  JObj([
-    ("country_code", JStr(p.country_code)),
-    ("party_id",     JStr(p.party_id)),
-  ])
+  JObj([("country_code", JStr(p.country_code)), ("party_id", JStr(p.party_id))])
 }
 
 fn from_json(j :: jv.Json) -> Option[PartyId] {
@@ -71,11 +63,11 @@ fn from_json(j :: jv.Json) -> Option[PartyId] {
 }
 
 # ---- Display -----------------------------------------------------
-
 fn display(p :: PartyId) -> Str
   examples {
-    display({ country_code: "NL", party_id: "TNM" }) => "NL*TNM",
+    display({ country_code: "NL", party_id: "TNM" }) => "NL*TNM"
   }
 {
   str.concat(p.country_code, str.concat("*", p.party_id))
 }
+

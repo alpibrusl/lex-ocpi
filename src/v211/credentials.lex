@@ -10,28 +10,20 @@
 
 import "std.list" as list
 
-import "lex-schema/json_value"  as jv
-import "lex-schema/schema"      as s
-import "lex-schema/error"       as e
+import "lex-schema/json_value" as jv
+
+import "lex-schema/schema" as s
+
+import "lex-schema/error" as e
 
 import "../v211/locations" as locs
 
 # ---- Credentials (v2.1.1 — flat) --------------------------------
-
 fn credentials_schema_v211() -> s.ModelSchema {
-  {
-    title: "Credentials",
-    description: "OCPI 2.1.1 — Credentials object (flat, no roles array)",
-    fields: [
-      s.required_str("url",          [StrNonEmpty, StrMaxLen(255)]),
-      s.required_str("token",        [StrNonEmpty, StrMaxLen(64)]),
-      s.required_str("party_id",     [StrNonEmpty, StrMaxLen(3)]),
-      s.required_str("country_code", [StrNonEmpty, StrMaxLen(2)]),
-      s.required_object("business_details", locs.business_details_schema()),
-    ],
-  }
+  { title: "Credentials", description: "OCPI 2.1.1 — Credentials object (flat, no roles array)", fields: [s.required_str("url", [StrNonEmpty, StrMaxLen(255)]), s.required_str("token", [StrNonEmpty, StrMaxLen(64)]), s.required_str("party_id", [StrNonEmpty, StrMaxLen(3)]), s.required_str("country_code", [StrNonEmpty, StrMaxLen(2)]), s.required_object("business_details", locs.business_details_schema())] }
 }
 
 fn validate_credentials_v211(j :: jv.Json) -> Result[jv.Json, List[e.Error]] {
   s.validate(credentials_schema_v211(), j)
 }
+

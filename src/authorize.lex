@@ -24,12 +24,25 @@ import "lex-schema/json_value" as jv
 # Constant strings for the AllowedType enum. Stable across all three
 # OCPI versions; mirrored in each `v<XX>/enums.lex` for the schema
 # `StrOneOf(...)` validators — these are kept in sync with those.
+fn allowed_str() -> Str {
+  "ALLOWED"
+}
 
-fn allowed_str()     -> Str { "ALLOWED" }
-fn blocked_str()     -> Str { "BLOCKED" }
-fn expired_str()     -> Str { "EXPIRED" }
-fn no_credit_str()   -> Str { "NO_CREDIT" }
-fn not_allowed_str() -> Str { "NOT_ALLOWED" }
+fn blocked_str() -> Str {
+  "BLOCKED"
+}
+
+fn expired_str() -> Str {
+  "EXPIRED"
+}
+
+fn no_credit_str() -> Str {
+  "NO_CREDIT"
+}
+
+fn not_allowed_str() -> Str {
+  "NOT_ALLOWED"
+}
 
 # ---- AuthorizationResult ----------------------------------------
 #
@@ -38,22 +51,14 @@ fn not_allowed_str() -> Str { "NOT_ALLOWED" }
 # can pull `token` / `location` / `authorization_reference` / `info`
 # out of it without re-parsing. Single-payload variants match the
 # `ClientError` / `HandlerResult` shape used elsewhere in lex-ocpi.
+type AuthorizationResult = Allowed(jv.Json) | Blocked(jv.Json) | Expired(jv.Json) | NoCredit(jv.Json) | NotAllowed(jv.Json)
 
-type AuthorizationResult =
-    Allowed(jv.Json)
-  | Blocked(jv.Json)
-  | Expired(jv.Json)
-  | NoCredit(jv.Json)
-  | NotAllowed(jv.Json)
-
-# Extract the underlying AuthorizationInfo JSON regardless of which
-# branch fired. Useful for callers that just want the wire shape.
 fn info(r :: AuthorizationResult) -> jv.Json {
   match r {
-    Allowed(j)    => j,
-    Blocked(j)    => j,
-    Expired(j)    => j,
-    NoCredit(j)   => j,
+    Allowed(j) => j,
+    Blocked(j) => j,
+    Expired(j) => j,
+    NoCredit(j) => j,
     NotAllowed(j) => j,
   }
 }
@@ -70,25 +75,38 @@ fn info(r :: AuthorizationResult) -> jv.Json {
 # The redundancy with the schema validator is deliberate: the
 # decoder is total even on unvalidated input so callers can decide
 # whether to validate first.
-
 fn decode(j :: jv.Json) -> Result[AuthorizationResult, Str] {
   match jv.get_field(j, "allowed") {
-    None     => Err("AuthorizationInfo missing `allowed` field"),
+    None => Err("AuthorizationInfo missing `allowed` field"),
     Some(av) => match jv.as_str(av) {
-      None    => Err("AuthorizationInfo `allowed` is not a string"),
+      None => Err("AuthorizationInfo `allowed` is not a string"),
       Some(s) => decode_allowed_str(s, j),
     },
   }
 }
 
 fn decode_allowed_str(s :: Str, j :: jv.Json) -> Result[AuthorizationResult, Str] {
-  if s == allowed_str()        { Ok(Allowed(j)) }
-  else { if s == blocked_str()     { Ok(Blocked(j)) }
-  else { if s == expired_str()     { Ok(Expired(j)) }
-  else { if s == no_credit_str()   { Ok(NoCredit(j)) }
-  else { if s == not_allowed_str() { Ok(NotAllowed(j)) }
-  else { Err(str.concat("AuthorizationInfo `allowed` not in catalogue: ", s)) }
-  } } } }
+  if s == allowed_str() {
+    Ok(Allowed(j))
+  } else {
+    if s == blocked_str() {
+      Ok(Blocked(j))
+    } else {
+      if s == expired_str() {
+        Ok(Expired(j))
+      } else {
+        if s == no_credit_str() {
+          Ok(NoCredit(j))
+        } else {
+          if s == not_allowed_str() {
+            Ok(NotAllowed(j))
+          } else {
+            Err(str.concat("AuthorizationInfo `allowed` not in catalogue: ", s))
+          }
+        }
+      }
+    }
+  }
 }
 
 # ---- Encoder ----------------------------------------------------
@@ -96,7 +114,7 @@ fn decode_allowed_str(s :: Str, j :: jv.Json) -> Result[AuthorizationResult, Str
 # Pure inverse of `decode`: returns the embedded AuthorizationInfo
 # JSON unchanged. Round-tripping `decode . encode` is the identity
 # on validated input.
-
 fn encode(r :: AuthorizationResult) -> jv.Json {
   info(r)
 }
+

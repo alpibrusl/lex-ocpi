@@ -1,7 +1,7 @@
 [package]
 name    = "lex-ocpi"
 version = "0.1.0"
-lex     = "0.9.5"
+lex     = "0.9.12"
 
 # OCPI (Open Charge Point Interface) library for lex-lang.
 #
@@ -22,5 +22,5 @@ lex     = "0.9.5"
 # slot in as sibling `v211/` / `v230/` directories — the wire
 # envelope, status codes, and routing layer are version-agnostic.
 [dependencies]
-lex-schema = { path = "../lex-schema" }
-lex-orm    = { path = "../lex-orm" }
+lex-schema = { git = "https://github.com/alpibrusl/lex-schema" }
+lex-orm    = { git = "https://github.com/alpibrusl/lex-orm" }

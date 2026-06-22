@@ -72,15 +72,20 @@
 #   * `broadcast_clientinfo` — `[net, time]`
 
 import "std.list" as list
-import "std.map"  as map
-import "std.str"  as str
+
+import "std.map" as map
+
+import "std.str" as str
 
 import "lex-schema/json_value" as jv
 
-import "./client"  as client
-import "./party"   as party
+import "./client" as client
+
+import "./party" as party
+
 import "./headers" as h
-import "./push"    as push
+
+import "./push" as push
 
 # ---- RoutingTable ----------------------------------------------
 #
@@ -90,10 +95,7 @@ import "./push"    as push
 #
 # `PushTarget` (from `src/push.lex`) is reused — it already carries
 # the per-peer `base_url` + `token` we need.
-
-type RoutingTable = {
-  peers :: Map[Str, push.PushTarget],
-}
+type RoutingTable = { peers :: Map[Str, push.PushTarget] }
 
 fn empty_table() -> RoutingTable {
   { peers: map.new() }
@@ -101,7 +103,7 @@ fn empty_table() -> RoutingTable {
 
 fn key_of(p :: party.PartyId) -> Str
   examples {
-    key_of({ country_code: "NL", party_id: "EXM" }) => "NL|EXM",
+    key_of({ country_code: "NL", party_id: "EXM" }) => "NL|EXM"
   }
 {
   str.concat(p.country_code, str.concat("|", p.party_id))
@@ -127,42 +129,29 @@ fn peer_count(t :: RoutingTable) -> Int {
 # fan out and by the conformance harness to enumerate the address
 # book.
 fn all_parties(t :: RoutingTable) -> List[party.PartyId] {
-  list.map(map.entries(t.peers),
-    fn (kv :: (Str, push.PushTarget)) -> party.PartyId {
-      match kv { (_, v) => v.party }
-    })
+  list.map(map.entries(t.peers), fn (kv :: (Str, push.PushTarget)) -> party.PartyId {
+    match kv {
+      (_, v) => v.party,
+    }
+  })
 }
 
 # ---- RoutingError ----------------------------------------------
+type RoutingError = UnknownReceiver(party.PartyId) | LoopDetected({ from :: party.PartyId, to :: party.PartyId }) | ForwardFailed(client.ClientError)
 
-type RoutingError =
-    UnknownReceiver(party.PartyId)            # `to_party` not in the table
-  | LoopDetected({ from :: party.PartyId,     # hub refuses to forward
-                   to   :: party.PartyId })   #   back to the sender
-  | ForwardFailed(client.ClientError)         # downstream returned an error
-                                                #   we already retried per policy
-
-# Map a `RoutingError` onto the spec's 4xxx hub-status code so
-# the hub can answer the original sender with a well-shaped OCPI
-# envelope. `connection_problem` (4004) is the catch-all for
-# transport-level failures; `unknown_receiver` (4002) for the
-# missing-peer case; `missing_or_invalid_parameters` (4001) for
-# the loop case (the spec doesn't carve out a dedicated code).
 fn error_to_status_code(e :: RoutingError) -> Int {
   match e {
     UnknownReceiver(_) => 4002,
-    LoopDetected(_)    => 4001,
-    ForwardFailed(_)   => 4004,
+    LoopDetected(_) => 4001,
+    ForwardFailed(_) => 4004,
   }
 }
 
 fn error_to_message(e :: RoutingError) -> Str {
   match e {
     UnknownReceiver(p) => str.concat("unknown receiver: ", key_of(p)),
-    LoopDetected(d)    => str.concat("forward loop refused: from=",
-                            str.concat(key_of(d.from),
-                              str.concat(" to=", key_of(d.to)))),
-    ForwardFailed(_)   => "downstream forward failed (see ClientError)",
+    LoopDetected(d) => str.concat("forward loop refused: from=", str.concat(key_of(d.from), str.concat(" to=", key_of(d.to)))),
+    ForwardFailed(_) => "downstream forward failed (see ClientError)",
   }
 }
 
@@ -179,27 +168,13 @@ fn error_to_message(e :: RoutingError) -> Str {
 # push. The hub strips its own mount prefix before calling
 # `forward` — that's the caller's responsibility, since only the
 # caller knows what its own mount point is.
-
-fn forward(
-  policy      :: client.RetryPolicy,
-  table       :: RoutingTable,
-  from_party  :: party.PartyId,
-  to_party    :: party.PartyId,
-  method      :: Str,
-  module_path :: Str,
-  body        :: Option[jv.Json]
-) -> [net, time] Result[jv.Json, RoutingError] {
-  # 1. Loop prevention: refuse if from == to. The hub never
-  #    forwards a request back to the party that sent it (would
-  #    cause the receiver to bounce it right back to us).
+fn forward(policy :: client.RetryPolicy, table :: RoutingTable, from_party :: party.PartyId, to_party :: party.PartyId, method :: Str, module_path :: Str, body :: Option[jv.Json]) -> [net, time] Result[jv.Json, RoutingError] {
   if same_party(from_party, to_party) {
     Err(LoopDetected({ from: from_party, to: to_party }))
   } else {
-    # 2. Routing lookup.
     match lookup(table, to_party) {
-      None         => Err(UnknownReceiver(to_party)),
-      Some(target) => execute_forward(policy, target, from_party, method,
-                                       module_path, body),
+      None => Err(UnknownReceiver(to_party)),
+      Some(target) => execute_forward(policy, target, from_party, method, module_path, body),
     }
   }
 }
@@ -208,17 +183,10 @@ fn same_party(a :: party.PartyId, b :: party.PartyId) -> Bool {
   a.country_code == b.country_code and a.party_id == b.party_id
 }
 
-fn execute_forward(
-  policy      :: client.RetryPolicy,
-  target      :: push.PushTarget,
-  from_party  :: party.PartyId,
-  method      :: Str,
-  module_path :: Str,
-  body        :: Option[jv.Json]
-) -> [net, time] Result[jv.Json, RoutingError] {
+fn execute_forward(policy :: client.RetryPolicy, target :: push.PushTarget, from_party :: party.PartyId, method :: Str, module_path :: Str, body :: Option[jv.Json]) -> [net, time] Result[jv.Json, RoutingError] {
   let req := build_forward_request(target, from_party, method, module_path, body)
   match client.send_with_retry(req, policy) {
-    Ok(j)  => Ok(j),
+    Ok(j) => Ok(j),
     Err(e) => Err(ForwardFailed(e)),
   }
 }
@@ -227,20 +195,13 @@ fn execute_forward(
 # decision and `client.send_with_retry`. Exposed for the
 # conformance harness so tests can assert on the request shape
 # without a live socket.
-
-fn build_forward_request(
-  target      :: push.PushTarget,
-  from_party  :: party.PartyId,
-  method      :: Str,
-  module_path :: Str,
-  body        :: Option[jv.Json]
-) -> HttpRequest {
-  let url    := str.concat(target.base_url, module_path)
-  let base   := client.base_request(method, url)
+fn build_forward_request(target :: push.PushTarget, from_party :: party.PartyId, method :: Str, module_path :: Str, body :: Option[jv.Json]) -> HttpRequest {
+  let url := str.concat(target.base_url, module_path)
+  let base := client.base_request(method, url)
   let with_t := client.with_token(base, target.token)
   let with_r := client.with_party_routing(with_t, from_party, target.party)
   match body {
-    None    => with_r,
+    None => with_r,
     Some(j) => client.with_json_body(with_r, jv.stringify(j)),
   }
 }
@@ -256,24 +217,15 @@ fn build_forward_request(
 #
 # Returns one (party, result) pair per recipient so callers can
 # log which broadcasts succeeded and which failed.
-
-fn broadcast_clientinfo(
-  policy        :: client.RetryPolicy,
-  table         :: RoutingTable,
-  hub_party     :: party.PartyId,           # the hub's own from-party
-  subject_party :: party.PartyId,           # whose state changed
-  subject_uid   :: Str,                      # path: /clientinfo/{cc}/{pid}/{uid}
-  client_info   :: jv.Json                  # the ClientInfo body
-) -> [net, time] List[(party.PartyId, Result[jv.Json, RoutingError])] {
-  let recipients := list.filter(all_parties(table),
-    fn (p :: party.PartyId) -> Bool { same_party(p, subject_party) == false })
-  list.map(recipients,
-    fn (recipient :: party.PartyId) -> [net, time] (party.PartyId, Result[jv.Json, RoutingError]) {
-      let path := clientinfo_path(subject_party, subject_uid)
-      let r := forward(policy, table, hub_party, recipient, "PUT", path,
-                       Some(client_info))
-      (recipient, r)
-    })
+fn broadcast_clientinfo(policy :: client.RetryPolicy, table :: RoutingTable, hub_party :: party.PartyId, subject_party :: party.PartyId, subject_uid :: Str, client_info :: jv.Json) -> [net, time] List[(party.PartyId, Result[jv.Json, RoutingError])] {
+  let recipients := list.filter(all_parties(table), fn (p :: party.PartyId) -> Bool {
+    same_party(p, subject_party) == false
+  })
+  list.map(recipients, fn (recipient :: party.PartyId) -> [net, time] (party.PartyId, Result[jv.Json, RoutingError]) {
+    let path := clientinfo_path(subject_party, subject_uid)
+    let r := forward(policy, table, hub_party, recipient, "PUT", path, Some(client_info))
+    (recipient, r)
+  })
 }
 
 # `/clientinfo/{cc}/{pid}/{uid}` per the spec — the subject party
@@ -281,12 +233,9 @@ fn broadcast_clientinfo(
 # the recipient.
 fn clientinfo_path(p :: party.PartyId, uid :: Str) -> Str
   examples {
-    clientinfo_path({ country_code: "NL", party_id: "EXM" }, "u-1") =>
-      "/clientinfo/NL/EXM/u-1",
+    clientinfo_path({ country_code: "NL", party_id: "EXM" }, "u-1") => "/clientinfo/NL/EXM/u-1"
   }
 {
-  str.concat("/clientinfo/",
-    str.concat(p.country_code,
-      str.concat("/",
-        str.concat(p.party_id, str.concat("/", uid)))))
+  str.concat("/clientinfo/", str.concat(p.country_code, str.concat("/", str.concat(p.party_id, str.concat("/", uid)))))
 }
+

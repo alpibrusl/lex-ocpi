@@ -20,11 +20,17 @@ import "../v221/sessions" as sess
 
 import "./migrations" as mig
 
-fn table_name() -> Str { "ocpi_sessions" }
+fn table_name() -> Str {
+  "ocpi_sessions"
+}
 
-fn schema() -> s.ModelSchema { sess.session_schema() }
+fn schema() -> s.ModelSchema {
+  sess.session_schema()
+}
 
-fn decode(j :: jv.Json) -> Result[jv.Json, se.Errors] { Ok(j) }
+fn decode(j :: jv.Json) -> Result[jv.Json, se.Errors] {
+  Ok(j)
+}
 
 fn repo() -> q.Repo[jv.Json] {
   q.with_table(q.for_schema(schema(), decode), table_name())
@@ -37,3 +43,4 @@ fn indexes() -> List[m.DdlChange] {
 fn migrate(db :: conn.ConnDb) -> [sql] Result[Unit, dbe.DbErr] {
   mig.run_ddl(db, table_name(), schema(), indexes())
 }
+

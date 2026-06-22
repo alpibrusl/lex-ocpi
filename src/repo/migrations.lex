@@ -51,3 +51,4 @@ fn map_err(e :: SqlError) -> dbe.DbErr {
     Some(c) => c,
   }, e.message)
 }
+

@@ -18,8 +18,10 @@
 #
 # Effects: none. Encode / decode are pure folds over JSON.
 
-import "std.str"  as str
-import "std.int"  as int
+import "std.str" as str
+
+import "std.int" as int
+
 import "std.list" as list
 
 import "lex-schema/json_value" as jv
@@ -30,13 +32,7 @@ import "lex-schema/json_value" as jv
 # can carry a single object, a list, a string, or null without
 # committing to a single shape at the type level. Module-specific
 # schemas validate the inner shape; the envelope is wire-format only.
-
-type OcpiResponse = {
-  data           :: jv.Json,
-  status_code    :: Int,
-  status_message :: Str,
-  timestamp      :: Str,
-}
+type OcpiResponse = { data :: jv.Json, status_code :: Int, status_message :: Str, timestamp :: Str }
 
 # ---- Constructors ------------------------------------------------
 #
@@ -44,12 +40,9 @@ type OcpiResponse = {
 # handler typically returns. `at` lets callers thread a custom
 # timestamp (for replayable test fixtures); the effectful path
 # in `route_io` calls `at` after stamping with `time.now_str()`.
-
 fn ok(data :: jv.Json, timestamp :: Str) -> OcpiResponse
   examples {
-    ok(JNull, "2026-05-15T10:00:00Z") =>
-      { data: JNull, status_code: 1000, status_message: "",
-        timestamp: "2026-05-15T10:00:00Z" },
+    ok(JNull, "2026-05-15T10:00:00Z") => { data: JNull, status_code: 1000, status_message: "", timestamp: "2026-05-15T10:00:00Z" }
   }
 {
   at(data, 1000, "", timestamp)
@@ -61,9 +54,7 @@ fn ok_list(items :: List[jv.Json], timestamp :: Str) -> OcpiResponse {
 
 fn ok_empty(timestamp :: Str) -> OcpiResponse
   examples {
-    ok_empty("2026-05-15T10:00:00Z") =>
-      { data: JNull, status_code: 1000, status_message: "",
-        timestamp: "2026-05-15T10:00:00Z" },
+    ok_empty("2026-05-15T10:00:00Z") => { data: JNull, status_code: 1000, status_message: "", timestamp: "2026-05-15T10:00:00Z" }
   }
 {
   at(JNull, 1000, "", timestamp)
@@ -71,35 +62,18 @@ fn ok_empty(timestamp :: Str) -> OcpiResponse
 
 fn fail(status_code :: Int, status_message :: Str, timestamp :: Str) -> OcpiResponse
   examples {
-    fail(2003, "Unknown Location", "ts") =>
-      { data: JNull, status_code: 2003,
-        status_message: "Unknown Location", timestamp: "ts" },
+    fail(2003, "Unknown Location", "ts") => { data: JNull, status_code: 2003, status_message: "Unknown Location", timestamp: "ts" }
   }
 {
   at(JNull, status_code, status_message, timestamp)
 }
 
-fn fail_with_data(
-  status_code    :: Int,
-  status_message :: Str,
-  data           :: jv.Json,
-  timestamp      :: Str
-) -> OcpiResponse {
+fn fail_with_data(status_code :: Int, status_message :: Str, data :: jv.Json, timestamp :: Str) -> OcpiResponse {
   at(data, status_code, status_message, timestamp)
 }
 
-fn at(
-  data           :: jv.Json,
-  status_code    :: Int,
-  status_message :: Str,
-  timestamp      :: Str
-) -> OcpiResponse {
-  {
-    data:           data,
-    status_code:    status_code,
-    status_message: status_message,
-    timestamp:      timestamp,
-  }
+fn at(data :: jv.Json, status_code :: Int, status_message :: Str, timestamp :: Str) -> OcpiResponse {
+  { data: data, status_code: status_code, status_message: status_message, timestamp: timestamp }
 }
 
 # ---- Encoding ----------------------------------------------------
@@ -107,12 +81,8 @@ fn at(
 # Serialise an `OcpiResponse` to the wire JSON. `status_message` is
 # omitted when empty per the OCPI spec (Part I §4.1.2 — "may be
 # omitted when status_code indicates success").
-
 fn to_json(r :: OcpiResponse) -> jv.Json {
-  let base := [
-    ("data",        r.data),
-    ("status_code", JInt(r.status_code)),
-  ]
+  let base := [("data", r.data), ("status_code", JInt(r.status_code))]
   let with_msg := if str.is_empty(r.status_message) {
     base
   } else {
@@ -130,7 +100,6 @@ fn encode(r :: OcpiResponse) -> Str {
 # Parse an inbound OCPI response. Useful on the client side (eMSP
 # receiving a CPO response, or vice versa). Missing / malformed
 # fields surface as an `EnvelopeError`, never a VM panic.
-
 type EnvelopeError = { message :: Str }
 
 fn envelope_err(message :: Str) -> EnvelopeError {
@@ -147,17 +116,16 @@ fn from_json(j :: jv.Json) -> Result[OcpiResponse, EnvelopeError] {
 fn read_fields(j :: jv.Json) -> Result[OcpiResponse, EnvelopeError] {
   let data_o := jv.get_field(j, "data")
   let code_o := jv.get_field(j, "status_code")
-  let ts_o   := jv.get_field(j, "timestamp")
+  let ts_o := jv.get_field(j, "timestamp")
   match (code_o, ts_o) {
     (Some(code_j), Some(ts_j)) => match jv.as_int(code_j) {
       None => Err(envelope_err("status_code must be a number")),
       Some(code) => match jv.as_str(ts_j) {
         None => Err(envelope_err("timestamp must be a string")),
-        Some(ts) => Ok(at(
-          match data_o { None => JNull, Some(d) => d },
-          code,
-          read_status_message(j),
-          ts)),
+        Some(ts) => Ok(at(match data_o {
+          None => JNull,
+          Some(d) => d,
+        }, code, read_status_message(j), ts)),
       },
     },
     _ => Err(envelope_err("envelope missing status_code or timestamp")),
@@ -166,9 +134,9 @@ fn read_fields(j :: jv.Json) -> Result[OcpiResponse, EnvelopeError] {
 
 fn read_status_message(j :: jv.Json) -> Str {
   match jv.get_field(j, "status_message") {
-    None    => "",
+    None => "",
     Some(m) => match jv.as_str(m) {
-      None    => "",
+      None => "",
       Some(s) => s,
     },
   }
@@ -177,18 +145,15 @@ fn read_status_message(j :: jv.Json) -> Str {
 fn parse(raw :: Str) -> Result[OcpiResponse, EnvelopeError] {
   match jv.parse(raw) {
     Err(p) => Err(envelope_err(str.concat("invalid JSON: ", p.message))),
-    Ok(j)  => from_json(j),
+    Ok(j) => from_json(j),
   }
 }
 
 # ---- Predicates --------------------------------------------------
-
 fn is_success(r :: OcpiResponse) -> Bool
   examples {
-    is_success({ data: JNull, status_code: 1000,
-                 status_message: "", timestamp: "" }) => true,
-    is_success({ data: JNull, status_code: 2003,
-                 status_message: "x", timestamp: "" }) => false,
+    is_success({ data: JNull, status_code: 1000, status_message: "", timestamp: "" }) => true,
+    is_success({ data: JNull, status_code: 2003, status_message: "x", timestamp: "" }) => false
   }
 {
   r.status_code >= 1000 and r.status_code < 2000
@@ -196,8 +161,7 @@ fn is_success(r :: OcpiResponse) -> Bool
 
 fn is_client_error(r :: OcpiResponse) -> Bool
   examples {
-    is_client_error({ data: JNull, status_code: 2001,
-                      status_message: "", timestamp: "" }) => true,
+    is_client_error({ data: JNull, status_code: 2001, status_message: "", timestamp: "" }) => true
   }
 {
   r.status_code >= 2000 and r.status_code < 3000
@@ -210,3 +174,4 @@ fn is_server_error(r :: OcpiResponse) -> Bool {
 fn is_hub_error(r :: OcpiResponse) -> Bool {
   r.status_code >= 4000 and r.status_code < 5000
 }
+
