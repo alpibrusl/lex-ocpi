@@ -1,5 +1,16 @@
 # lex-ocpi
 
+## Role in EV Fleet
+
+Pure Lex library that provides the CPO↔eMSP roaming protocol layer. Within this fleet:
+
+- **lex-emsp** uses it to serve the eMSP role — receiving token lookups, CDR pushes, and session notifications from CPOs, and building OCPI 2.2.1 credential handshakes
+- The `src/client.lex` outbound HTTP client is the foundation for any future proactive CPO polling or eMSP-initiated credential exchange
+
+Covers OCPI 2.1.1, 2.2.1, and 2.3.0 (including the Payments module added in 2.3.0). Pure core — no effects; HTTP transport wired in by the consuming service.
+
+---
+
 OCPI (Open Charge Point Interface) library for the
 [Lex language](https://github.com/alpibrusl/lex-lang), in the spirit of
 [elumobility/ocpi-python](https://github.com/elumobility/ocpi-python): the same
