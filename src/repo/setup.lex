@@ -39,3 +39,4 @@ fn setup_all(db :: conn.ConnDb) -> [sql] Result[Unit, dbe.DbErr] {
     },
   }
 }
+

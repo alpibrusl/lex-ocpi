@@ -9,21 +9,18 @@
 # wall-clock-sensitive cases, `[concurrent]` for race scenarios)
 # widen the row at their main entry point.
 
-import "std.int"  as int
+import "std.int" as int
+
 import "std.list" as list
-import "std.str"  as str
+
+import "std.str" as str
 
 import "lex-schema/json_value" as jv
 
 import "../src/client" as client
 
 # ---- TargetConfig ---------------------------------------------
-
-type TargetConfig = {
-  base_url :: Str,
-  token    :: Str,
-  version  :: Str,
-}
+type TargetConfig = { base_url :: Str, token :: Str, version :: Str }
 
 fn versions_url(cfg :: TargetConfig) -> Str {
   str.concat(cfg.base_url, "/versions")
@@ -34,10 +31,7 @@ fn version_detail_url(cfg :: TargetConfig) -> Str {
 }
 
 fn module_url(cfg :: TargetConfig, module :: Str) -> Str {
-  str.concat(cfg.base_url,
-    str.concat("/",
-      str.concat(cfg.version,
-        str.concat("/", module))))
+  str.concat(cfg.base_url, str.concat("/", str.concat(cfg.version, str.concat("/", module))))
 }
 
 fn module_item_url(cfg :: TargetConfig, module :: Str, item_id :: Str) -> Str {
@@ -45,21 +39,12 @@ fn module_item_url(cfg :: TargetConfig, module :: Str, item_id :: Str) -> Str {
 }
 
 # ---- CaseResult ------------------------------------------------
+type CaseResult = CasePass | CaseFail(Str) | CaseSkip(Str)
 
-type CaseResult =
-    CasePass
-  | CaseFail(Str)                       # human-readable reason
-  | CaseSkip(Str)                       # case not applicable to this peer
-
-# ---- Case ------------------------------------------------------
-
-type Case = {
-  name :: Str,
-  run  :: (TargetConfig) -> [net, proc] CaseResult,
-}
+type Case = { name :: Str, run :: (TargetConfig) -> [net, proc] CaseResult }
 
 fn run_case(c :: Case, cfg :: TargetConfig) -> [net, proc] CaseResult {
-  (c.run)(cfg)
+  c.run(cfg)
 }
 
 # Harness self-test: wraps a case so the verdict is inverted. A
@@ -69,26 +54,22 @@ fn run_case(c :: Case, cfg :: TargetConfig) -> [net, proc] CaseResult {
 # name is annotated `[expect-fail]` so it's obvious in the rollup
 # what the case is actually asserting.
 fn expect_fail(c :: Case) -> Case {
-  {
-    name: str.concat("[expect-fail] ", c.name),
-    run: fn (cfg :: TargetConfig) -> [net, proc] CaseResult {
-      match (c.run)(cfg) {
-        CaseFail(_) => CasePass,
-        CasePass    => CaseFail("expected underlying case to fail, but it passed"),
-        CaseSkip(m) => CaseSkip(m),
-      }
-    },
-  }
+  { name: str.concat("[expect-fail] ", c.name), run: fn (cfg :: TargetConfig) -> [net, proc] CaseResult {
+    match c.run(cfg) {
+      CaseFail(_) => CasePass,
+      CasePass => CaseFail("expected underlying case to fail, but it passed"),
+      CaseSkip(m) => CaseSkip(m),
+    }
+  } }
 }
 
 # ---- Error rendering ------------------------------------------
-
 fn client_error_short(e :: client.ClientError) -> Str {
   match e {
-    HttpFailed(m)    => str.concat("transport: ", m),
+    HttpFailed(m) => str.concat("transport: ", m),
     HttpStatus(info) => str.concat("HTTP ", int.to_str(info.code)),
-    BadEnvelope(m)   => str.concat("bad envelope: ", m),
-    OcpiError(r)     => str.concat("OCPI ", int.to_str(r.status_code)),
+    BadEnvelope(m) => str.concat("bad envelope: ", m),
+    OcpiError(r) => str.concat("OCPI ", int.to_str(r.status_code)),
   }
 }
 
@@ -98,11 +79,7 @@ fn client_error_short(e :: client.ClientError) -> Str {
 # renderers are pure derivations of `records`; one walk, two
 # output shapes — callers choose by calling `text_lines` or
 # `to_json` on the same Summary.
-
-type CaseRecord = {
-  name   :: Str,
-  result :: CaseResult,
-}
+type CaseRecord = { name :: Str, result :: CaseResult }
 
 # ---- Summary + single-pass runner -----------------------------
 #
@@ -110,44 +87,29 @@ type CaseRecord = {
 # `zip`, so the harness folds cases and results together in one
 # walk. Each iteration runs the case under [net, proc] and accumulates
 # into the running summary.
-
-type Summary = {
-  passed  :: Int,
-  failed  :: Int,
-  skipped :: Int,
-  total   :: Int,
-  records :: List[CaseRecord],
-}
+type Summary = { passed :: Int, failed :: Int, skipped :: Int, total :: Int, records :: List[CaseRecord] }
 
 fn empty_summary() -> Summary {
   { passed: 0, failed: 0, skipped: 0, total: 0, records: [] }
 }
 
 fn run_suite(cases :: List[Case], cfg :: TargetConfig) -> [net, proc] Summary {
-  list.fold(cases, empty_summary(),
-    fn (acc :: Summary, c :: Case) -> [net, proc] Summary {
-      let r := run_case(c, cfg)
-      accumulate(acc, c.name, r)
-    })
+  list.fold(cases, empty_summary(), fn (acc :: Summary, c :: Case) -> [net, proc] Summary {
+    let r := run_case(c, cfg)
+    accumulate(acc, c.name, r)
+  })
 }
 
 fn accumulate(acc :: Summary, name :: Str, r :: CaseResult) -> Summary {
   let records := list.concat(acc.records, [{ name: name, result: r }])
   match r {
-    CasePass    => { passed: acc.passed + 1, failed: acc.failed,
-                     skipped: acc.skipped, total: acc.total + 1,
-                     records: records },
-    CaseFail(_) => { passed: acc.passed, failed: acc.failed + 1,
-                     skipped: acc.skipped, total: acc.total + 1,
-                     records: records },
-    CaseSkip(_) => { passed: acc.passed, failed: acc.failed,
-                     skipped: acc.skipped + 1, total: acc.total + 1,
-                     records: records },
+    CasePass => { passed: acc.passed + 1, failed: acc.failed, skipped: acc.skipped, total: acc.total + 1, records: records },
+    CaseFail(_) => { passed: acc.passed, failed: acc.failed + 1, skipped: acc.skipped, total: acc.total + 1, records: records },
+    CaseSkip(_) => { passed: acc.passed, failed: acc.failed, skipped: acc.skipped + 1, total: acc.total + 1, records: records },
   }
 }
 
 # ---- Text rendering ------------------------------------------
-
 fn text_lines(s :: Summary) -> List[Str] {
   list.map(s.records, fn (r :: CaseRecord) -> Str {
     render_line(r.name, r.result)
@@ -156,20 +118,14 @@ fn text_lines(s :: Summary) -> List[Str] {
 
 fn render_line(name :: Str, r :: CaseResult) -> Str {
   match r {
-    CasePass     => str.concat("PASS ", name),
-    CaseFail(m)  => str.concat("FAIL ", str.concat(name, str.concat("  — ", m))),
-    CaseSkip(m)  => str.concat("SKIP ", str.concat(name, str.concat("  — ", m))),
+    CasePass => str.concat("PASS ", name),
+    CaseFail(m) => str.concat("FAIL ", str.concat(name, str.concat("  — ", m))),
+    CaseSkip(m) => str.concat("SKIP ", str.concat(name, str.concat("  — ", m))),
   }
 }
 
 fn rollup(s :: Summary) -> Str {
-  str.concat("PASSED ",
-    str.concat(int.to_str(s.passed),
-      str.concat("/",
-        str.concat(int.to_str(s.total),
-          str.concat("  FAILED ",
-            str.concat(int.to_str(s.failed),
-              str.concat("  SKIPPED ", int.to_str(s.skipped))))))))
+  str.concat("PASSED ", str.concat(int.to_str(s.passed), str.concat("/", str.concat(int.to_str(s.total), str.concat("  FAILED ", str.concat(int.to_str(s.failed), str.concat("  SKIPPED ", int.to_str(s.skipped))))))))
 }
 
 # ---- JSON rendering ------------------------------------------
@@ -184,42 +140,23 @@ fn rollup(s :: Summary) -> Str {
 # Each case entry carries `name` + `status`; FAIL / SKIP entries
 # additionally carry `message`. `to_json_str` is the convenience
 # stringifier the harness mains call.
-
 fn to_json(s :: Summary) -> jv.Json {
-  JObj([
-    ("summary", summary_to_json(s)),
-    ("cases",   JList(list.map(s.records, record_to_json))),
-  ])
+  JObj([("summary", summary_to_json(s)), ("cases", JList(list.map(s.records, record_to_json)))])
 }
 
 fn summary_to_json(s :: Summary) -> jv.Json {
-  JObj([
-    ("passed",  JInt(s.passed)),
-    ("failed",  JInt(s.failed)),
-    ("skipped", JInt(s.skipped)),
-    ("total",   JInt(s.total)),
-  ])
+  JObj([("passed", JInt(s.passed)), ("failed", JInt(s.failed)), ("skipped", JInt(s.skipped)), ("total", JInt(s.total))])
 }
 
 fn record_to_json(r :: CaseRecord) -> jv.Json {
   match r.result {
-    CasePass     => JObj([
-                       ("name",   JStr(r.name)),
-                       ("status", JStr("PASS")),
-                     ]),
-    CaseFail(m)  => JObj([
-                       ("name",    JStr(r.name)),
-                       ("status",  JStr("FAIL")),
-                       ("message", JStr(m)),
-                     ]),
-    CaseSkip(m)  => JObj([
-                       ("name",    JStr(r.name)),
-                       ("status",  JStr("SKIP")),
-                       ("message", JStr(m)),
-                     ]),
+    CasePass => JObj([("name", JStr(r.name)), ("status", JStr("PASS"))]),
+    CaseFail(m) => JObj([("name", JStr(r.name)), ("status", JStr("FAIL")), ("message", JStr(m))]),
+    CaseSkip(m) => JObj([("name", JStr(r.name)), ("status", JStr("SKIP")), ("message", JStr(m))]),
   }
 }
 
 fn to_json_str(s :: Summary) -> Str {
   jv.stringify(to_json(s))
 }
+

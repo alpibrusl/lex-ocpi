@@ -14,7 +14,8 @@
 #
 # Effects: none.
 
-import "std.str"  as str
+import "std.str" as str
+
 import "std.list" as list
 
 import "lex-schema/json_value" as jv
@@ -27,12 +28,7 @@ import "./status" as status
 # structured context (which field failed validation, the OCPI
 # party that timed out, the unsupported version that was requested,
 # …) without committing to a specific shape.
-
-type OcpiError = {
-  code    :: Int,
-  message :: Str,
-  detail  :: jv.Json,
-}
+type OcpiError = { code :: Int, message :: Str, detail :: jv.Json }
 
 fn err(code :: Int, message :: Str) -> OcpiError {
   { code: code, message: message, detail: JNull }
@@ -47,7 +43,6 @@ fn err_with(code :: Int, message :: Str, detail :: jv.Json) -> OcpiError {
 # One constructor per status code in the spec's 2xxx / 3xxx ranges.
 # Handlers reach for these rather than building the raw `{code,
 # message, detail}` record at the call site.
-
 fn invalid_parameters(description :: Str) -> OcpiError {
   err(status.invalid_or_missing_parameters(), description)
 }
@@ -58,28 +53,18 @@ fn not_enough_information(description :: Str) -> OcpiError {
 
 fn unknown_location(location_id :: Str) -> OcpiError
   examples {
-    unknown_location("LOC9") =>
-      { code: 2003,
-        message: "Unknown Location: LOC9",
-        detail: JObj([("location_id", JStr("LOC9"))]) },
+    unknown_location("LOC9") => { code: 2003, message: "Unknown Location: LOC9", detail: JObj([("location_id", JStr("LOC9"))]) }
   }
 {
-  err_with(status.unknown_location(),
-    str.concat("Unknown Location: ", location_id),
-    JObj([("location_id", JStr(location_id))]))
+  err_with(status.unknown_location(), str.concat("Unknown Location: ", location_id), JObj([("location_id", JStr(location_id))]))
 }
 
 fn unknown_token(token_uid :: Str) -> OcpiError
   examples {
-    unknown_token("RFID-A") =>
-      { code: 2004,
-        message: "Unknown Token: RFID-A",
-        detail: JObj([("uid", JStr("RFID-A"))]) },
+    unknown_token("RFID-A") => { code: 2004, message: "Unknown Token: RFID-A", detail: JObj([("uid", JStr("RFID-A"))]) }
   }
 {
-  err_with(status.unknown_token(),
-    str.concat("Unknown Token: ", token_uid),
-    JObj([("uid", JStr(token_uid))]))
+  err_with(status.unknown_token(), str.concat("Unknown Token: ", token_uid), JObj([("uid", JStr(token_uid))]))
 }
 
 fn server_error(description :: Str) -> OcpiError {
@@ -87,9 +72,7 @@ fn server_error(description :: Str) -> OcpiError {
 }
 
 fn unsupported_version(version :: Str) -> OcpiError {
-  err_with(status.unsupported_version(),
-    str.concat("Unsupported version: ", version),
-    JObj([("version", JStr(version))]))
+  err_with(status.unsupported_version(), str.concat("Unsupported version: ", version), JObj([("version", JStr(version))]))
 }
 
 fn unable_to_use_api(description :: Str) -> OcpiError {
@@ -102,19 +85,10 @@ fn unable_to_use_api(description :: Str) -> OcpiError {
 # error. The resulting envelope returns status `2001` with the
 # full list of failing fields in `data` — a UI rendering the
 # response can highlight every failing field in a single pass.
-
-fn from_schema_errors(
-  es :: List[{ path :: Str, code :: Str, message :: Str }]
-) -> OcpiError {
-  let entries := list.map(es,
-    fn (e :: { path :: Str, code :: Str, message :: Str }) -> jv.Json {
-      JObj([
-        ("path",    JStr(e.path)),
-        ("code",    JStr(e.code)),
-        ("message", JStr(e.message)),
-      ])
-    })
-  err_with(status.invalid_or_missing_parameters(),
-    "request payload failed schema validation",
-    JObj([("violations", JList(entries))]))
+fn from_schema_errors(es :: List[{ path :: Str, code :: Str, message :: Str }]) -> OcpiError {
+  let entries := list.map(es, fn (e :: { path :: Str, code :: Str, message :: Str }) -> jv.Json {
+    JObj([("path", JStr(e.path)), ("code", JStr(e.code)), ("message", JStr(e.message))])
+  })
+  err_with(status.invalid_or_missing_parameters(), "request payload failed schema validation", JObj([("violations", JList(entries))]))
 }
+

@@ -49,16 +49,22 @@
 # The slice-1 sync helpers and ADTs live in `src/commands.lex`.
 
 import "std.conc" as conc
-import "std.map"  as map
-import "std.str"  as str
+
+import "std.map" as map
+
+import "std.str" as str
+
 import "std.time" as time
 
 import "lex-schema/json_value" as jv
 
-import "./client"   as client
+import "./client" as client
+
 import "./commands" as cmds
-import "./route"    as route
-import "./error"    as oe
+
+import "./route" as route
+
+import "./error" as oe
 
 # ---- Inflight registry — message + reply ADTs -------------------
 #
@@ -73,45 +79,24 @@ import "./error"    as oe
 # "registered-but-pending" apart from "never heard of it". `map.get`
 # already returns `Option[V]`; we use the outer Option for membership
 # and the inner Option for completion.
+type InflightMsg = Register(Str) | Complete((Str, cmds.CommandResult)) | Lookup(Str) | Forget(Str)
 
-type InflightMsg =
-    Register(Str)
-  | Complete(Str, cmds.CommandResult)
-  | Lookup(Str)
-  | Forget(Str)
+type InflightReply = AckRegistered | AckCompleted | AckForgotten | LookupPending | LookupReady(cmds.CommandResult) | LookupUnknown
 
-type InflightReply =
-    AckRegistered
-  | AckCompleted
-  | AckForgotten
-  | LookupPending
-  | LookupReady(cmds.CommandResult)
-  | LookupUnknown
-
-# Pure transition function. The slice 1 idea of "validator at the
-# route layer, handler stays pure" carries over: the registry's
-# update rule has no effect and is callable from tests directly.
-
-fn inflight_handler(
-  state :: Map[Str, Option[cmds.CommandResult]],
-  msg :: InflightMsg
-) -> (Map[Str, Option[cmds.CommandResult]], InflightReply) {
+fn inflight_handler(state :: Map[Str, Option[cmds.CommandResult]], msg :: InflightMsg) -> (Map[Str, Option[cmds.CommandResult]], InflightReply) {
   match msg {
-    Register(id)     => (map.set(state, id, None), AckRegistered),
-    Complete(id, r)  => (map.set(state, id, Some(r)), AckCompleted),
-    Forget(id)       => (map.delete(state, id), AckForgotten),
-    Lookup(id)       => (state, lookup_reply(state, id)),
+    Register(id) => (map.set(state, id, None), AckRegistered),
+    Complete(id, r) => (map.set(state, id, Some(r)), AckCompleted),
+    Forget(id) => (map.delete(state, id), AckForgotten),
+    Lookup(id) => (state, lookup_reply(state, id)),
   }
 }
 
-fn lookup_reply(
-  state :: Map[Str, Option[cmds.CommandResult]],
-  id    :: Str
-) -> InflightReply {
+fn lookup_reply(state :: Map[Str, Option[cmds.CommandResult]], id :: Str) -> InflightReply {
   match map.get(state, id) {
-    None        => LookupUnknown,
-    Some(slot)  => match slot {
-      None    => LookupPending,
+    None => LookupUnknown,
+    Some(slot) => match slot {
+      None => LookupPending,
       Some(r) => LookupReady(r),
     },
   }
@@ -119,40 +104,25 @@ fn lookup_reply(
 
 # Spawn a fresh inflight registry. One per eMSP process — the actor
 # is what makes concurrent callback POSTs and in-flight reads safe.
-
 fn new_inflight() -> [concurrent] Actor[Map[Str, Option[cmds.CommandResult]]] {
   conc.spawn(map.new(), inflight_handler)
 }
 
 # Thin wrappers so callers don't have to spell the message ADT at
 # every call site. All three carry `[concurrent]`.
-
-fn register(
-  actor :: Actor[Map[Str, Option[cmds.CommandResult]]],
-  id    :: Str
-) -> [concurrent] Unit {
+fn register(actor :: Actor[Map[Str, Option[cmds.CommandResult]]], id :: Str) -> [concurrent] Unit {
   conc.tell(actor, Register(id))
 }
 
-fn complete(
-  actor  :: Actor[Map[Str, Option[cmds.CommandResult]]],
-  id     :: Str,
-  result :: cmds.CommandResult
-) -> [concurrent] Unit {
+fn complete(actor :: Actor[Map[Str, Option[cmds.CommandResult]]], id :: Str, result :: cmds.CommandResult) -> [concurrent] Unit {
   conc.tell(actor, Complete(id, result))
 }
 
-fn forget(
-  actor :: Actor[Map[Str, Option[cmds.CommandResult]]],
-  id    :: Str
-) -> [concurrent] Unit {
+fn forget(actor :: Actor[Map[Str, Option[cmds.CommandResult]]], id :: Str) -> [concurrent] Unit {
   conc.tell(actor, Forget(id))
 }
 
-fn lookup(
-  actor :: Actor[Map[Str, Option[cmds.CommandResult]]],
-  id    :: Str
-) -> [concurrent] InflightReply {
+fn lookup(actor :: Actor[Map[Str, Option[cmds.CommandResult]]], id :: Str) -> [concurrent] InflightReply {
   conc.ask(actor, Lookup(id))
 }
 
@@ -175,17 +145,9 @@ fn lookup(
 # spinning a goroutine-equivalent but goroutines aren't a Lex
 # primitive — actor-as-future is the closest equivalent and that's
 # what we do here: the registry actor IS the future store.
+type WaitError = WaitTimeout | WaitUnknown
 
-type WaitError =
-    WaitTimeout
-  | WaitUnknown
-
-fn wait_for_result(
-  actor             :: Actor[Map[Str, Option[cmds.CommandResult]]],
-  response_id       :: Str,
-  timeout_ms        :: Int,
-  poll_interval_ms  :: Int
-) -> [concurrent, time] Result[cmds.CommandResult, WaitError] {
+fn wait_for_result(actor :: Actor[Map[Str, Option[cmds.CommandResult]]], response_id :: Str, timeout_ms :: Int, poll_interval_ms :: Int) -> [concurrent, time] Result[cmds.CommandResult, WaitError] {
   let deadline_ns := compute_deadline(timeout_ms)
   poll_loop(actor, response_id, deadline_ns, poll_interval_ms)
 }
@@ -193,11 +155,11 @@ fn wait_for_result(
 # Pure split so the deadline math is testable without [time].
 fn compute_deadline_from(start_ns :: Int, timeout_ms :: Int) -> Int
   examples {
-    compute_deadline_from(0, 1500)        => 1500000000,
-    compute_deadline_from(100_000_000, 0) => 100_000_000,
+    compute_deadline_from(0, 1500) => 1500000000,
+    compute_deadline_from(100000000, 0) => 100000000
   }
 {
-  start_ns + timeout_ms * 1_000_000
+  start_ns + timeout_ms * 1000000
 }
 
 fn compute_deadline(timeout_ms :: Int) -> [time] Int {
@@ -208,25 +170,19 @@ fn compute_deadline(timeout_ms :: Int) -> [time] Int {
 # optionally sleep, recur. Termination is guaranteed by the
 # deadline check — every iteration either returns or advances
 # `time.mono_ns()`.
-
-fn poll_loop(
-  actor             :: Actor[Map[Str, Option[cmds.CommandResult]]],
-  response_id       :: Str,
-  deadline_ns       :: Int,
-  poll_interval_ms  :: Int
-) -> [concurrent, time] Result[cmds.CommandResult, WaitError] {
+fn poll_loop(actor :: Actor[Map[Str, Option[cmds.CommandResult]]], response_id :: Str, deadline_ns :: Int, poll_interval_ms :: Int) -> [concurrent, time] Result[cmds.CommandResult, WaitError] {
   match lookup(actor, response_id) {
-    LookupReady(r)  => Ok(r),
-    LookupUnknown   => Err(WaitUnknown),
-    LookupPending   => if time.mono_ns() >= deadline_ns {
-                         Err(WaitTimeout)
-                       } else {
-                         let _ := time.sleep_ms(poll_interval_ms)
-                         poll_loop(actor, response_id, deadline_ns, poll_interval_ms)
-                       },
-    AckRegistered   => Err(WaitUnknown),
-    AckCompleted    => Err(WaitUnknown),
-    AckForgotten    => Err(WaitUnknown),
+    LookupReady(r) => Ok(r),
+    LookupUnknown => Err(WaitUnknown),
+    LookupPending => if time.mono_ns() >= deadline_ns {
+      Err(WaitTimeout)
+    } else {
+      let __lex_discard_1 := time.sleep_ms(poll_interval_ms)
+      poll_loop(actor, response_id, deadline_ns, poll_interval_ms)
+    },
+    AckRegistered => Err(WaitUnknown),
+    AckCompleted => Err(WaitUnknown),
+    AckForgotten => Err(WaitUnknown),
   }
 }
 
@@ -244,12 +200,7 @@ fn poll_loop(
 # spec doesn't define an envelope shape for the eMSP's reply on
 # this callback beyond the standard status-code semantics —
 # `client.post_json` handles both transport + envelope failures.
-
-fn callback_result(
-  response_url :: Str,
-  result       :: cmds.CommandResult,
-  token_b64    :: Str
-) -> [net] Result[jv.Json, client.ClientError] {
+fn callback_result(response_url :: Str, result :: cmds.CommandResult, token_b64 :: Str) -> [net] Result[jv.Json, client.ClientError] {
   let body := jv.stringify(cmds.encode_command_result(result))
   client.post_json(response_url, body, token_b64)
 }
@@ -271,22 +222,14 @@ fn callback_result(
 # `conc.tell` is fine (it's not inside `route.dispatch`). The
 # pattern matches slice 1's `command_handler` — the route layer
 # does what it can, the user fills in the effect-carrying tail.
+type ResultPost = PostCompleted({ response_id :: Str, result :: cmds.CommandResult }) | PostBadResponseId(Str) | PostBadBody(Str)
 
-type ResultPost =
-    PostCompleted({ response_id :: Str, result :: cmds.CommandResult })
-  | PostBadResponseId(Str)
-  | PostBadBody(Str)
-
-fn parse_result_post(
-  req                 :: route.OcpiRequest,
-  extract_response_id :: (route.OcpiRequest) -> Option[Str]
-) -> ResultPost {
+fn parse_result_post(req :: route.OcpiRequest, extract_response_id :: (route.OcpiRequest) -> Option[Str]) -> ResultPost {
   match extract_response_id(req) {
-    None        => PostBadResponseId(
-      "unable to extract response_id from callback request"),
-    Some(id)    => match cmds.decode_command_result(req.body) {
+    None => PostBadResponseId("unable to extract response_id from callback request"),
+    Some(id) => match cmds.decode_command_result(req.body) {
       Err(why) => PostBadBody(why),
-      Ok(r)    => PostCompleted({ response_id: id, result: r }),
+      Ok(r) => PostCompleted({ response_id: id, result: r }),
     },
   }
 }
@@ -295,11 +238,11 @@ fn parse_result_post(
 # happy path is HOkEmpty (eMSPs typically don't return a body to
 # the CPO on a successful callback); the two error paths surface
 # the validator-style 2001 with a clear message.
-
 fn result_post_handler_result(p :: ResultPost) -> route.HandlerResult {
   match p {
-    PostCompleted(_)    => HOkEmpty,
+    PostCompleted(_) => HOkEmpty,
     PostBadResponseId(m) => HErr(oe.invalid_parameters(m)),
-    PostBadBody(m)       => HErr(oe.invalid_parameters(m)),
+    PostBadBody(m) => HErr(oe.invalid_parameters(m)),
   }
 }
+

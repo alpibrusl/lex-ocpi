@@ -27,7 +27,11 @@ import "../src/repo/tariffs" as r_tars
 import "../src/repo/paginated" as paged
 
 fn check(name :: Str, cond :: Bool) -> Result[Unit, Str] {
-  if cond { Ok(()) } else { Err(name) }
+  if cond {
+    Ok(())
+  } else {
+    Err(name)
+  }
 }
 
 # ---- table names ------------------------------------------------
@@ -53,7 +57,7 @@ fn tariffs_table_name() -> Result[Unit, Str] {
 
 # ---- migrations emit CREATE TABLE -------------------------------
 fn locations_create_ddl() -> Result[Unit, Str] {
-  let ddl := m.to_create_table_named(r_locs.table_name(), r_locs.schema(), DbPostgres)
+  let ddl := m.to_create_table_named(r_locs.table_name(), r_locs.schema(), DbPostgres(()))
   check("CREATE TABLE ocpi_locations", str.contains(ddl, "ocpi_locations"))
 }
 
@@ -108,5 +112,10 @@ fn run_all() -> Int {
       Err(_) => acc + 1,
     }
   })
-  if failed > 0 { 1 / 0 } else { 0 }
+  if failed > 0 {
+    1 / 0
+  } else {
+    0
+  }
 }
+

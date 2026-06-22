@@ -7,31 +7,30 @@
 #
 # Effects: pure for everything except `authorize_token` (`[net]`).
 
-import "std.str"  as str
+import "std.str" as str
+
 import "std.list" as list
-import "std.map"  as map
+
+import "std.map" as map
 
 import "lex-schema/json_value" as jv
-import "lex-schema/error"      as e
+
+import "lex-schema/error" as e
 
 import "../authorize" as auth
-import "../client"    as client
-import "../route"     as route
-import "../error"     as oe
-import "./tokens"     as tokens
+
+import "../client" as client
+
+import "../route" as route
+
+import "../error" as oe
+
+import "./tokens" as tokens
 
 # ---- URL + body builders ----------------------------------------
-
-fn build_authorize_url(
-  base         :: Str,
-  country_code :: Str,
-  party_id     :: Str,
-  token_uid    :: Str
-) -> Str
+fn build_authorize_url(base :: Str, country_code :: Str, party_id :: Str, token_uid :: Str) -> Str
   examples {
-    build_authorize_url("https://emsp.example/ocpi/2.3.0/tokens",
-                        "NL", "TNM", "RFID-A") =>
-      "https://emsp.example/ocpi/2.3.0/tokens/NL/TNM/RFID-A/authorize",
+    build_authorize_url("https://emsp.example/ocpi/2.3.0/tokens", "NL", "TNM", "RFID-A") => "https://emsp.example/ocpi/2.3.0/tokens/NL/TNM/RFID-A/authorize"
   }
 {
   let s1 := str.concat(base, "/")
@@ -45,32 +44,29 @@ fn build_authorize_url(
 
 fn build_authorize_body(refs :: Option[jv.Json]) -> Str
   examples {
-    build_authorize_body(None) => "{}",
+    build_authorize_body(None) => "{}"
   }
 {
   match refs {
-    None    => "{}",
+    None => "{}",
     Some(j) => jv.stringify(j),
   }
 }
 
 # ---- Receiver-side glue -----------------------------------------
-
 fn body_validator(j :: jv.Json) -> Result[jv.Json, List[e.Error]] {
   match j {
-    JNull         => Ok(j),
+    JNull => Ok(j),
     JObj(entries) => if list.is_empty(entries) {
-                       Ok(j)
-                     } else {
-                       tokens.validate_location_references(j)
-                     },
-    _             => tokens.validate_location_references(j),
+      Ok(j)
+    } else {
+      tokens.validate_location_references(j)
+    },
+    _ => tokens.validate_location_references(j),
   }
 }
 
-fn authorize_handler(
-  authorize :: (Str, Option[jv.Json]) -> auth.AuthorizationResult
-) -> (route.OcpiRequest) -> route.HandlerResult {
+fn authorize_handler(authorize :: (Str, Option[jv.Json]) -> auth.AuthorizationResult) -> (route.OcpiRequest) -> route.HandlerResult {
   fn (req :: route.OcpiRequest) -> route.HandlerResult {
     match map.get(req.path_params, "token_uid") {
       None => route.fail(oe.invalid_parameters("missing token_uid in path")),
@@ -85,29 +81,26 @@ fn authorize_handler(
 
 fn body_to_refs(j :: jv.Json) -> Option[jv.Json] {
   match j {
-    JNull         => None,
-    JObj(entries) => if list.is_empty(entries) { None } else { Some(j) },
-    _             => Some(j),
+    JNull => None,
+    JObj(entries) => if list.is_empty(entries) {
+      None
+    } else {
+      Some(j)
+    },
+    _ => Some(j),
   }
 }
 
 # ---- Sender-side `[net]` helper ---------------------------------
-
-fn authorize_token(
-  base          :: Str,
-  country_code  :: Str,
-  party_id      :: Str,
-  token_uid     :: Str,
-  token_b64     :: Str,
-  location_refs :: Option[jv.Json]
-) -> [net] Result[auth.AuthorizationResult, client.ClientError] {
-  let url  := build_authorize_url(base, country_code, party_id, token_uid)
+fn authorize_token(base :: Str, country_code :: Str, party_id :: Str, token_uid :: Str, token_b64 :: Str, location_refs :: Option[jv.Json]) -> [net] Result[auth.AuthorizationResult, client.ClientError] {
+  let url := build_authorize_url(base, country_code, party_id, token_uid)
   let body := build_authorize_body(location_refs)
   match client.post_json(url, body, token_b64) {
     Err(err) => Err(err),
-    Ok(j)    => match auth.decode(j) {
+    Ok(j) => match auth.decode(j) {
       Err(why) => Err(BadEnvelope(why)),
-      Ok(r)    => Ok(r),
+      Ok(r) => Ok(r),
     },
   }
 }
+

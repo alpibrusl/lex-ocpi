@@ -16,22 +16,35 @@
 # `[sql]` test runner lands.
 
 import "std.list" as list
-import "std.str"  as str
+
+import "std.str" as str
 
 import "lex-schema/json_value" as jv
 
-import "../src/envelope"        as env
+import "../src/envelope" as env
+
 import "../src/idempotency_sql" as isql
 
-fn pass() -> Result[Unit, Str] { Ok(()) }
-fn fail(why :: Str) -> Result[Unit, Str] { Err(why) }
+fn pass() -> Result[Unit, Str] {
+  Ok(())
+}
+
+fn fail(why :: Str) -> Result[Unit, Str] {
+  Err(why)
+}
 
 fn assert_true(b :: Bool, label :: Str) -> Result[Unit, Str] {
-  if b { pass() } else { fail(label) }
+  if b {
+    pass()
+  } else {
+    fail(label)
+  }
 }
 
 fn assert_eq_str(want :: Str, got :: Str, label :: Str) -> Result[Unit, Str] {
-  if want == got { pass() } else {
+  if want == got {
+    pass()
+  } else {
     let m1 := str.concat(label, ": want=")
     let m2 := str.concat(m1, want)
     let m3 := str.concat(m2, " got=")
@@ -40,12 +53,9 @@ fn assert_eq_str(want :: Str, got :: Str, label :: Str) -> Result[Unit, Str] {
 }
 
 # ---- Config ----------------------------------------------------
-
 fn test_default_config() -> Result[Unit, Str] {
   let c := isql.default_config()
-  if c.ttl_ms == 24 * 60 * 60 * 1000
-     and c.poll_interval_ms == 50
-     and c.max_wait_ms == 5000 {
+  if c.ttl_ms == 24 * 60 * 60 * 1000 and c.poll_interval_ms == 50 and c.max_wait_ms == 5000 {
     pass()
   } else {
     fail("default config values drifted")
@@ -61,12 +71,8 @@ fn test_table_name_stable() -> Result[Unit, Str] {
 # stringify + env.parse must be inverses on a representative
 # envelope. Catches drift between the encoder and the existing
 # decoder (env.parse).
-
 fn sample_response() -> env.OcpiResponse {
-  { data:           JObj([("id", JStr("L1"))]),
-    status_code:    1000,
-    status_message: "",
-    timestamp:      "2026-05-17T09:00:00Z" }
+  { data: JObj([("id", JStr("L1"))]), status_code: 1000, status_message: "", timestamp: "2026-05-17T09:00:00Z" }
 }
 
 fn test_stringify_parse_round_trip() -> Result[Unit, Str] {
@@ -74,99 +80,77 @@ fn test_stringify_parse_round_trip() -> Result[Unit, Str] {
   let s := isql.stringify_response(r)
   match env.parse(s) {
     Err(e) => fail(str.concat("env.parse failed: ", e.message)),
-    Ok(r2) => if r2.status_code == r.status_code
-                 and r2.status_message == r.status_message
-                 and r2.timestamp == r.timestamp {
-                pass()
-              } else {
-                fail("round-trip lost a field")
-              },
+    Ok(r2) => if r2.status_code == r.status_code and r2.status_message == r.status_message and r2.timestamp == r.timestamp {
+      pass()
+    } else {
+      fail("round-trip lost a field")
+    },
   }
 }
 
 fn test_stringify_response_carries_status_code() -> Result[Unit, Str] {
   let s := isql.stringify_response(sample_response())
-  if str.contains(s, "\"status_code\":1000") { pass() }
-  else { fail("status_code missing from serialised envelope") }
+  if str.contains(s, "\"status_code\":1000") {
+    pass()
+  } else {
+    fail("status_code missing from serialised envelope")
+  }
 }
 
 # ---- decode_existing branches --------------------------------
-
 fn test_decode_existing_stale_inflight_is_wait() -> Result[Unit, Str] {
-  let row := { status: "inflight", response_json: None,
-               expires_at_ms: 1000 }
+  let row := { status: "inflight", response_json: None, expires_at_ms: 1000 }
   match isql.decode_existing(row, 2000) {
     SqlReserveWait => pass(),
-    _              => fail("expected SqlReserveWait for stale inflight"),
+    _ => fail("expected SqlReserveWait for stale inflight"),
   }
 }
 
 fn test_decode_existing_fresh_inflight_is_wait() -> Result[Unit, Str] {
-  let row := { status: "inflight", response_json: None,
-               expires_at_ms: 5000 }
+  let row := { status: "inflight", response_json: None, expires_at_ms: 5000 }
   match isql.decode_existing(row, 2000) {
     SqlReserveWait => pass(),
-    _              => fail("expected SqlReserveWait for fresh inflight"),
+    _ => fail("expected SqlReserveWait for fresh inflight"),
   }
 }
 
 fn test_decode_existing_completed_is_hit() -> Result[Unit, Str] {
   let r := sample_response()
-  let row := { status: "completed",
-               response_json: Some(isql.stringify_response(r)),
-               expires_at_ms: 5000 }
+  let row := { status: "completed", response_json: Some(isql.stringify_response(r)), expires_at_ms: 5000 }
   match isql.decode_existing(row, 2000) {
-    SqlReserveHit(got) => assert_true(got.status_code == r.status_code,
-                                       "status_code round-tripped"),
-    _                  => fail("expected SqlReserveHit for fresh completed"),
+    SqlReserveHit(got) => assert_true(got.status_code == r.status_code, "status_code round-tripped"),
+    _ => fail("expected SqlReserveHit for fresh completed"),
   }
 }
 
 fn test_decode_existing_expired_completed_is_wait() -> Result[Unit, Str] {
   let r := sample_response()
-  let row := { status: "completed",
-               response_json: Some(isql.stringify_response(r)),
-               expires_at_ms: 1000 }
+  let row := { status: "completed", response_json: Some(isql.stringify_response(r)), expires_at_ms: 1000 }
   match isql.decode_existing(row, 2000) {
     SqlReserveWait => pass(),
-    _              => fail("expected SqlReserveWait for expired completed"),
+    _ => fail("expected SqlReserveWait for expired completed"),
   }
 }
 
 fn test_decode_existing_completed_null_body_is_wait() -> Result[Unit, Str] {
-  # Defensive case: status=completed but response_json is NULL.
-  # Shouldn't happen in normal operation but the decoder must be
-  # total and not crash.
-  let row := { status: "completed", response_json: None,
-               expires_at_ms: 5000 }
+  let row := { status: "completed", response_json: None, expires_at_ms: 5000 }
   match isql.decode_existing(row, 2000) {
     SqlReserveWait => pass(),
-    _              => fail("expected SqlReserveWait when response_json missing"),
+    _ => fail("expected SqlReserveWait when response_json missing"),
   }
 }
 
 # ---- Suite + runner ------------------------------------------
-
 fn suite() -> List[Result[Unit, Str]] {
-  [
-    test_default_config(),
-    test_table_name_stable(),
-    test_stringify_parse_round_trip(),
-    test_stringify_response_carries_status_code(),
-    test_decode_existing_stale_inflight_is_wait(),
-    test_decode_existing_fresh_inflight_is_wait(),
-    test_decode_existing_completed_is_hit(),
-    test_decode_existing_expired_completed_is_wait(),
-    test_decode_existing_completed_null_body_is_wait(),
-  ]
+  [test_default_config(), test_table_name_stable(), test_stringify_parse_round_trip(), test_stringify_response_carries_status_code(), test_decode_existing_stale_inflight_is_wait(), test_decode_existing_fresh_inflight_is_wait(), test_decode_existing_completed_is_hit(), test_decode_existing_expired_completed_is_wait(), test_decode_existing_completed_null_body_is_wait()]
 }
 
 fn run_all() -> Int {
-  list.fold(suite(), 0,
-    fn (n :: Int, r :: Result[Unit, Str]) -> Int {
-      match r {
-        Ok(_)  => n,
-        Err(_) => n + 1,
-      }
-    })
+  list.fold(suite(), 0, fn (n :: Int, r :: Result[Unit, Str]) -> Int {
+    match r {
+      Ok(_) => n,
+      Err(_) => n + 1,
+    }
+  })
 }
+

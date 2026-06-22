@@ -62,41 +62,36 @@
 #   * `try_reserve / store / ...` — `[concurrent]` wrappers
 #   * `dispatch_with_cache`       — `[concurrent, time]`
 
-import "std.conc"  as conc
-import "std.list"  as list
-import "std.map"   as map
-import "std.str"   as str
-import "std.time"  as time
+import "std.conc" as conc
+
+import "std.list" as list
+
+import "std.map" as map
+
+import "std.str" as str
+
+import "std.time" as time
+
 import "std.tuple" as tuple
 
 import "./envelope" as env
-import "./headers"  as h
-import "./route"    as route
+
+import "./headers" as h
+
+import "./route" as route
 
 # ---- Cache key --------------------------------------------------
-
-type CacheKey = {
-  method        :: Str,
-  path          :: Str,
-  request_id    :: Str,
-  from_cc       :: Str,
-  from_party_id :: Str,
-}
+type CacheKey = { method :: Str, path :: Str, request_id :: Str, from_cc :: Str, from_party_id :: Str }
 
 # `|` separator — see module-level note on collisions. Length-prefix
 # encoding would defend against pathological inputs but the OCPI
 # wire shapes don't carry pipes in any of these fields in practice.
 fn key_str(k :: CacheKey) -> Str
   examples {
-    key_str({ method: "POST", path: "/cdrs", request_id: "r1",
-              from_cc: "NL", from_party_id: "EXM" }) =>
-      "POST|/cdrs|r1|NL|EXM",
+    key_str({ method: "POST", path: "/cdrs", request_id: "r1", from_cc: "NL", from_party_id: "EXM" }) => "POST|/cdrs|r1|NL|EXM"
   }
 {
-  str.concat(k.method, str.concat("|",
-    str.concat(k.path, str.concat("|",
-      str.concat(k.request_id, str.concat("|",
-        str.concat(k.from_cc, str.concat("|", k.from_party_id))))))))
+  str.concat(k.method, str.concat("|", str.concat(k.path, str.concat("|", str.concat(k.request_id, str.concat("|", str.concat(k.from_cc, str.concat("|", k.from_party_id))))))))
 }
 
 # Derive a key from a parsed request. Returns `None` if the request
@@ -106,13 +101,7 @@ fn key_from_request(req :: route.OcpiRequest) -> Option[CacheKey] {
   if req.headers.request_id == "" {
     None
   } else {
-    Some({
-      method:        req.method,
-      path:          req.path,
-      request_id:    req.headers.request_id,
-      from_cc:       req.headers.from_party.country_code,
-      from_party_id: req.headers.from_party.party_id,
-    })
+    Some({ method: req.method, path: req.path, request_id: req.headers.request_id, from_cc: req.headers.from_party.country_code, from_party_id: req.headers.from_party.party_id })
   }
 }
 
@@ -120,59 +109,29 @@ fn key_from_request(req :: route.OcpiRequest) -> Option[CacheKey] {
 #
 # Two-level slot type lets the actor distinguish "someone's running
 # this" from "this is the cached result" without two separate maps.
+type CacheSlot = InFlight | Completed({ response :: env.OcpiResponse, expires_at_ns :: Int })
 
-type CacheSlot =
-    InFlight                                     # handler is running; pollers should wait
-  | Completed({ response :: env.OcpiResponse,
-                expires_at_ns :: Int })           # cached; valid until expires_at_ns
-
-# Wrap everything the actor needs. `lru` is most-recently-used at
-# the head; eviction drops the tail when `map.size(entries) > capacity`.
-# `capacity` is carried in state so the handler is pure (no closure
-# over a constructor arg).
-
-type CacheState = {
-  entries  :: Map[Str, CacheSlot],
-  lru      :: List[Str],                          # most-recent first
-  capacity :: Int,
-}
+type CacheState = { entries :: Map[Str, CacheSlot], lru :: List[Str], capacity :: Int }
 
 # ---- Messages + replies -----------------------------------------
+type CacheMsg = TryReserve(Str) | Store((Str, env.OcpiResponse, Int)) | Forget(Str) | Lookup((Str, Int)) | Purge(Int)
 
-type CacheMsg =
-    TryReserve(Str)                               # key — atomic "is it cached / claim it"
-  | Store(Str, env.OcpiResponse, Int)              # key, response, expires_at_ns
-  | Forget(Str)                                    # key — caller's handler errored; release slot
-  | Lookup(Str, Int)                              # key, now_ns — pollers use this
-  | Purge(Int)                                     # now_ns — drop everything expired before now
-
-type CacheReply =
-    Run                                            # caller should run the handler now
-  | Wait                                            # someone else is running; caller polls Lookup
-  | Hit({ response :: env.OcpiResponse })          # cached, here you go
-  | Miss                                            # not cached AND not in-flight (Lookup only)
-  | Ack                                             # for Store / Forget / Purge
-
-# ---- Pure transition function -----------------------------------
-#
-# All updates to the LRU list go through `bump`, which moves the
-# touched key to the head. Eviction (`evict_if_over_capacity`) runs
-# after every `Store` insertion.
+type CacheReply = Run | Wait | Hit({ response :: env.OcpiResponse }) | Miss | Ack
 
 fn cache_handler(state :: CacheState, msg :: CacheMsg) -> (CacheState, CacheReply) {
   match msg {
-    TryReserve(k)        => handle_try_reserve(state, k),
-    Store(k, r, exp_ns)  => (insert_completed(state, k, r, exp_ns), Ack),
-    Forget(k)            => (remove(state, k), Ack),
-    Lookup(k, now_ns)    => (state, lookup_reply(state, k, now_ns)),
-    Purge(now_ns)        => (purge_expired(state, now_ns), Ack),
+    TryReserve(k) => handle_try_reserve(state, k),
+    Store(k, r, exp_ns) => (insert_completed(state, k, r, exp_ns), Ack),
+    Forget(k) => (remove(state, k), Ack),
+    Lookup(k, now_ns) => (state, lookup_reply(state, k, now_ns)),
+    Purge(now_ns) => (purge_expired(state, now_ns), Ack),
   }
 }
 
 fn handle_try_reserve(state :: CacheState, k :: Str) -> (CacheState, CacheReply) {
   match map.get(state.entries, k) {
-    None             => (insert_inflight(state, k), Run),
-    Some(InFlight)   => (state, Wait),
+    None => (insert_inflight(state, k), Run),
+    Some(InFlight) => (state, Wait),
     Some(Completed(c)) => (bump(state, k), Hit({ response: c.response })),
   }
 }
@@ -181,66 +140,58 @@ fn handle_try_reserve(state :: CacheState, k :: Str) -> (CacheState, CacheReply)
 # "cached" from "vanished" (TTL expired or never registered).
 fn lookup_reply(state :: CacheState, k :: Str, now_ns :: Int) -> CacheReply {
   match map.get(state.entries, k) {
-    None              => Miss,
-    Some(InFlight)    => Wait,
+    None => Miss,
+    Some(InFlight) => Wait,
     Some(Completed(c)) => if now_ns >= c.expires_at_ns {
-                            Miss      # caller will reserve + re-run
-                          } else {
-                            Hit({ response: c.response })
-                          },
+      Miss
+    } else {
+      Hit({ response: c.response })
+    },
   }
 }
 
 fn insert_inflight(state :: CacheState, k :: Str) -> CacheState {
   let entries := map.set(state.entries, k, InFlight)
-  let lru     := list.cons(k, remove_from_list(state.lru, k))
+  let lru := list.cons(k, remove_from_list(state.lru, k))
   evict_if_over_capacity({ entries: entries, lru: lru, capacity: state.capacity })
 }
 
-fn insert_completed(
-  state  :: CacheState,
-  k      :: Str,
-  r      :: env.OcpiResponse,
-  exp_ns :: Int
-) -> CacheState {
+fn insert_completed(state :: CacheState, k :: Str, r :: env.OcpiResponse, exp_ns :: Int) -> CacheState {
   let entries := map.set(state.entries, k, Completed({ response: r, expires_at_ns: exp_ns }))
-  let lru     := list.cons(k, remove_from_list(state.lru, k))
+  let lru := list.cons(k, remove_from_list(state.lru, k))
   evict_if_over_capacity({ entries: entries, lru: lru, capacity: state.capacity })
 }
 
 fn remove(state :: CacheState, k :: Str) -> CacheState {
-  { entries: map.delete(state.entries, k),
-    lru:     remove_from_list(state.lru, k),
-    capacity: state.capacity }
+  { entries: map.delete(state.entries, k), lru: remove_from_list(state.lru, k), capacity: state.capacity }
 }
 
 # Move `k` to the head of the LRU list.
 fn bump(state :: CacheState, k :: Str) -> CacheState {
-  { entries: state.entries,
-    lru:     list.cons(k, remove_from_list(state.lru, k)),
-    capacity: state.capacity }
+  { entries: state.entries, lru: list.cons(k, remove_from_list(state.lru, k)), capacity: state.capacity }
 }
 
 # Drop entries whose `expires_at_ns < now_ns`. In-flight slots are
 # kept (they have no expiry until they complete).
 fn purge_expired(state :: CacheState, now_ns :: Int) -> CacheState {
   let entries := state.entries
-  let kept    := list.filter(map.entries(entries),
-    fn (kv :: (Str, CacheSlot)) -> Bool {
-      match tuple.snd(kv) {
-        InFlight        => true,
-        Completed(c)    => c.expires_at_ns >= now_ns,
-      }
+  let kept := list.filter(map.entries(entries), fn (kv :: (Str, CacheSlot)) -> Bool {
+    match tuple.snd(kv) {
+      InFlight => true,
+      Completed(c) => c.expires_at_ns >= now_ns,
+    }
+  })
+  let new_entries := list.fold(kept, map.new(), fn (acc :: Map[Str, CacheSlot], kv :: (Str, CacheSlot)) -> Map[Str, CacheSlot] {
+    map.set(acc, tuple.fst(kv), tuple.snd(kv))
+  })
+  let live_keys := list.map(kept, fn (kv :: (Str, CacheSlot)) -> Str {
+    tuple.fst(kv)
+  })
+  let new_lru := list.filter(state.lru, fn (k :: Str) -> Bool {
+    list.fold(live_keys, false, fn (found :: Bool, lk :: Str) -> Bool {
+      found or lk == k
     })
-  let new_entries := list.fold(kept, map.new(),
-    fn (acc :: Map[Str, CacheSlot], kv :: (Str, CacheSlot)) -> Map[Str, CacheSlot] {
-      map.set(acc, tuple.fst(kv), tuple.snd(kv))
-    })
-  let live_keys := list.map(kept,
-    fn (kv :: (Str, CacheSlot)) -> Str { tuple.fst(kv) })
-  let new_lru := list.filter(state.lru,
-    fn (k :: Str) -> Bool { list.fold(live_keys, false,
-      fn (found :: Bool, lk :: Str) -> Bool { found or lk == k }) })
+  })
   { entries: new_entries, lru: new_lru, capacity: state.capacity }
 }
 
@@ -250,23 +201,23 @@ fn purge_expired(state :: CacheState, now_ns :: Int) -> CacheState {
 fn evict_if_over_capacity(state :: CacheState) -> CacheState {
   if state.capacity <= 0 {
     state
-  } else { if map.size(state.entries) <= state.capacity {
-    state
   } else {
-    match last_key(state.lru) {
-      None    => state,           # impossible if entries non-empty, but total
-      Some(k) => evict_if_over_capacity({
-        entries: map.delete(state.entries, k),
-        lru:     remove_from_list(state.lru, k),
-        capacity: state.capacity,
-      }),
+    if map.size(state.entries) <= state.capacity {
+      state
+    } else {
+      match last_key(state.lru) {
+        None => state,
+        Some(k) => evict_if_over_capacity({ entries: map.delete(state.entries, k), lru: remove_from_list(state.lru, k), capacity: state.capacity }),
+      }
     }
-  } }
+  }
 }
 
 # Helper: drop the first occurrence of `target` from `xs`.
 fn remove_from_list(xs :: List[Str], target :: Str) -> List[Str] {
-  list.filter(xs, fn (s :: Str) -> Bool { s != target })
+  list.filter(xs, fn (s :: Str) -> Bool {
+    s != target
+  })
 }
 
 fn last_key(xs :: List[Str]) -> Option[Str] {
@@ -274,7 +225,6 @@ fn last_key(xs :: List[Str]) -> Option[Str] {
 }
 
 # ---- Spawning ---------------------------------------------------
-
 fn empty_state(capacity :: Int) -> CacheState {
   { entries: map.new(), lru: [], capacity: capacity }
 }
@@ -284,17 +234,11 @@ fn new_cache(capacity :: Int) -> [concurrent] Actor[CacheState] {
 }
 
 # ---- Actor wrappers (thin) -------------------------------------
-
 fn try_reserve(actor :: Actor[CacheState], k :: Str) -> [concurrent] CacheReply {
   conc.ask(actor, TryReserve(k))
 }
 
-fn store_response(
-  actor   :: Actor[CacheState],
-  k       :: Str,
-  r       :: env.OcpiResponse,
-  exp_ns  :: Int
-) -> [concurrent] Unit {
+fn store_response(actor :: Actor[CacheState], k :: Str, r :: env.OcpiResponse, exp_ns :: Int) -> [concurrent] Unit {
   conc.tell(actor, Store(k, r, exp_ns))
 }
 
@@ -302,11 +246,7 @@ fn forget(actor :: Actor[CacheState], k :: Str) -> [concurrent] Unit {
   conc.tell(actor, Forget(k))
 }
 
-fn lookup(
-  actor :: Actor[CacheState],
-  k     :: Str,
-  now_ns :: Int
-) -> [concurrent] CacheReply {
+fn lookup(actor :: Actor[CacheState], k :: Str, now_ns :: Int) -> [concurrent] CacheReply {
   conc.ask(actor, Lookup(k, now_ns))
 }
 
@@ -333,28 +273,15 @@ fn purge(actor :: Actor[CacheState], now_ns :: Int) -> [concurrent] Unit {
 # `now_ns` and `timestamp` are caller-supplied to keep the wrapper
 # testable without `[time]` for clock advancement; in production
 # the transport layer threads `time.mono_ns()` + `time.now_str()`.
-
-type CacheConfig = {
-  ttl_ms           :: Int,
-  poll_interval_ms :: Int,
-  max_wait_ms      :: Int,
-}
+type CacheConfig = { ttl_ms :: Int, poll_interval_ms :: Int, max_wait_ms :: Int }
 
 fn default_config() -> CacheConfig {
-  # 24h TTL matches the spec's replay window; 50ms poll and 5s
-  # max-wait are conservative defaults for the single-flight path.
   { ttl_ms: 24 * 60 * 60 * 1000, poll_interval_ms: 50, max_wait_ms: 5000 }
 }
 
-fn dispatch_with_cache(
-  reg       :: route.Registry,
-  cache     :: Actor[CacheState],
-  cfg       :: CacheConfig,
-  req       :: route.OcpiRequest,
-  timestamp :: Str
-) -> [concurrent, time] env.OcpiResponse {
+fn dispatch_with_cache(reg :: route.Registry, cache :: Actor[CacheState], cfg :: CacheConfig, req :: route.OcpiRequest, timestamp :: Str) -> [concurrent, time] env.OcpiResponse {
   match key_from_request(req) {
-    None    => route.dispatch(reg, req, timestamp),
+    None => route.dispatch(reg, req, timestamp),
     Some(k) => {
       let key := key_str(k)
       dispatch_branch(reg, cache, cfg, req, timestamp, key)
@@ -362,80 +289,47 @@ fn dispatch_with_cache(
   }
 }
 
-fn dispatch_branch(
-  reg       :: route.Registry,
-  cache     :: Actor[CacheState],
-  cfg       :: CacheConfig,
-  req       :: route.OcpiRequest,
-  timestamp :: Str,
-  key       :: Str
-) -> [concurrent, time] env.OcpiResponse {
+fn dispatch_branch(reg :: route.Registry, cache :: Actor[CacheState], cfg :: CacheConfig, req :: route.OcpiRequest, timestamp :: Str, key :: Str) -> [concurrent, time] env.OcpiResponse {
   match try_reserve(cache, key) {
-    Hit(h)  => h.response,
-    Run     => run_and_cache(reg, cache, cfg, req, timestamp, key),
-    Wait    => wait_or_fallback(reg, cache, cfg, req, timestamp, key),
-    Miss    => run_and_cache(reg, cache, cfg, req, timestamp, key),
-    Ack     => run_and_cache(reg, cache, cfg, req, timestamp, key),
+    Hit(h) => h.response,
+    Run => run_and_cache(reg, cache, cfg, req, timestamp, key),
+    Wait => wait_or_fallback(reg, cache, cfg, req, timestamp, key),
+    Miss => run_and_cache(reg, cache, cfg, req, timestamp, key),
+    Ack => run_and_cache(reg, cache, cfg, req, timestamp, key),
   }
 }
 
-fn run_and_cache(
-  reg       :: route.Registry,
-  cache     :: Actor[CacheState],
-  cfg       :: CacheConfig,
-  req       :: route.OcpiRequest,
-  timestamp :: Str,
-  key       :: Str
-) -> [concurrent, time] env.OcpiResponse {
+fn run_and_cache(reg :: route.Registry, cache :: Actor[CacheState], cfg :: CacheConfig, req :: route.OcpiRequest, timestamp :: Str, key :: Str) -> [concurrent, time] env.OcpiResponse {
   let resp := route.dispatch(reg, req, timestamp)
-  let expires_at_ns := time.mono_ns() + cfg.ttl_ms * 1_000_000
-  let _ := store_response(cache, key, resp, expires_at_ns)
+  let expires_at_ns := time.mono_ns() + cfg.ttl_ms * 1000000
+  let __lex_discard_1 := store_response(cache, key, resp, expires_at_ns)
   resp
 }
 
 # Poll the cache for completion. On timeout, we clear the in-flight
 # marker (the original caller is presumed dead) and run the handler
 # ourselves. Same shape as `commands_async.wait_for_result`.
-fn wait_or_fallback(
-  reg       :: route.Registry,
-  cache     :: Actor[CacheState],
-  cfg       :: CacheConfig,
-  req       :: route.OcpiRequest,
-  timestamp :: Str,
-  key       :: Str
-) -> [concurrent, time] env.OcpiResponse {
-  let deadline_ns := time.mono_ns() + cfg.max_wait_ms * 1_000_000
+fn wait_or_fallback(reg :: route.Registry, cache :: Actor[CacheState], cfg :: CacheConfig, req :: route.OcpiRequest, timestamp :: Str, key :: Str) -> [concurrent, time] env.OcpiResponse {
+  let deadline_ns := time.mono_ns() + cfg.max_wait_ms * 1000000
   poll_for_completion(reg, cache, cfg, req, timestamp, key, deadline_ns)
 }
 
-fn poll_for_completion(
-  reg         :: route.Registry,
-  cache       :: Actor[CacheState],
-  cfg         :: CacheConfig,
-  req         :: route.OcpiRequest,
-  timestamp   :: Str,
-  key         :: Str,
-  deadline_ns :: Int
-) -> [concurrent, time] env.OcpiResponse {
+fn poll_for_completion(reg :: route.Registry, cache :: Actor[CacheState], cfg :: CacheConfig, req :: route.OcpiRequest, timestamp :: Str, key :: Str, deadline_ns :: Int) -> [concurrent, time] env.OcpiResponse {
   match lookup(cache, key, time.mono_ns()) {
-    Hit(h)  => h.response,
-    Miss    => {
-      # Either the in-flight marker was cleared (original caller
-      # errored) or the cached entry's TTL elapsed while we polled.
-      # Reserve and run.
-      let _ := forget(cache, key)
+    Hit(h) => h.response,
+    Miss => {
+      let __lex_discard_2 := forget(cache, key)
       run_and_cache(reg, cache, cfg, req, timestamp, key)
     },
-    Wait    => if time.mono_ns() >= deadline_ns {
-                 # Original caller hasn't completed in max_wait_ms;
-                 # assume they died. Clear the marker and run.
-                 let _ := forget(cache, key)
-                 run_and_cache(reg, cache, cfg, req, timestamp, key)
-               } else {
-                 let _ := time.sleep_ms(cfg.poll_interval_ms)
-                 poll_for_completion(reg, cache, cfg, req, timestamp, key, deadline_ns)
-               },
-    Run     => run_and_cache(reg, cache, cfg, req, timestamp, key),
-    Ack     => run_and_cache(reg, cache, cfg, req, timestamp, key),
+    Wait => if time.mono_ns() >= deadline_ns {
+      let __lex_discard_3 := forget(cache, key)
+      run_and_cache(reg, cache, cfg, req, timestamp, key)
+    } else {
+      let __lex_discard_4 := time.sleep_ms(cfg.poll_interval_ms)
+      poll_for_completion(reg, cache, cfg, req, timestamp, key, deadline_ns)
+    },
+    Run => run_and_cache(reg, cache, cfg, req, timestamp, key),
+    Ack => run_and_cache(reg, cache, cfg, req, timestamp, key),
   }
 }
+

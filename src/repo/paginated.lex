@@ -40,7 +40,7 @@ fn apply_date_range[T](sel :: q.SelectQuery[T], range :: ft.DateRange) -> q.Sele
 fn list_paginated(repo :: q.Repo[jv.Json], db :: conn.ConnDb, req :: pg.PageRequest, range :: ft.DateRange) -> [sql] Result[pg.Page, dbe.DbErr] {
   let base := q.select(repo)
   let filtered := apply_date_range(base, range)
-  let paged := q.offset(q.limit(q.order_by(filtered, "last_updated", Asc), req.limit), req.offset)
+  let paged := q.offset(q.limit(q.order_by(filtered, "last_updated", Asc(())), req.limit), req.offset)
   match q.run_select(paged, db) {
     Err(e) => Err(e),
     Ok(items) => match q.run_count(filtered, db) {
@@ -49,3 +49,4 @@ fn list_paginated(repo :: q.Repo[jv.Json], db :: conn.ConnDb, req :: pg.PageRequ
     },
   }
 }
+

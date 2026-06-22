@@ -17,9 +17,12 @@
 # Run:
 #   lex run --allow-effects net,io,time examples/cpo_buggy.lex main
 
-import "std.io"   as io
-import "std.net"  as net
-import "std.map"  as map
+import "std.io" as io
+
+import "std.net" as net
+
+import "std.map" as map
+
 import "std.time" as time
 
 import "lex-schema/json_value" as jv
@@ -27,19 +30,12 @@ import "lex-schema/json_value" as jv
 import "../src/envelope" as env
 
 fn handle(_req :: Request) -> [time] Response {
-  let body := jv.stringify(JObj([
-    ("data",        JList([])),
-    ("status_code", JInt(999)),
-    ("timestamp",   JStr(time.now_str())),
-  ]))
-  {
-    body:    BodyStr(body),
-    status:  200,
-    headers: map.set(map.new(), "content-type", "application/json"),
-  }
+  let body := jv.stringify(JObj([("data", JList([])), ("status_code", JInt(999)), ("timestamp", JStr(time.now_str()))]))
+  { body: BodyStr(body), status: 200, headers: map.set(map.new(), "content-type", "application/json") }
 }
 
 fn main() -> [net, io, time] Nil {
-  let _ := io.print("buggy CPO  http://localhost:9103/ (always emits status_code 999)")
+  let __lex_discard_1 := io.print("buggy CPO  http://localhost:9103/ (always emits status_code 999)")
   net.serve_fn(9103, handle)
 }
+

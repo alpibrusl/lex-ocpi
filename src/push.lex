@@ -45,13 +45,15 @@
 #
 # Effects: `[net, time]` end-to-end (inherited from `send_with_retry`).
 
-import "std.str"  as str
+import "std.str" as str
+
 import "std.list" as list
 
 import "lex-schema/json_value" as jv
 
 import "./client" as client
-import "./party"  as party
+
+import "./party" as party
 
 # ---- PushTarget --------------------------------------------------
 #
@@ -60,12 +62,7 @@ import "./party"  as party
 # version-detail base, e.g. `https://emsp.example/ocpi/2.2.1`).
 # `token` is the token the eMSP issued to us (i.e. their inbound
 # token, our outbound).
-
-type PushTarget = {
-  party    :: party.PartyId,         # whom we're pushing to
-  base_url :: Str,                   # version-base, no trailing slash
-  token    :: Str,                   # eMSP's inbound token (b64)
-}
+type PushTarget = { party :: party.PartyId, base_url :: Str, token :: Str }
 
 # ---- PushKind ---------------------------------------------------
 #
@@ -88,133 +85,73 @@ type PushTarget = {
 # CdrPost has no party-tuple in the path: the receiver applies the
 # `OCPI-from-*` headers for tenant routing (the CDR is a new object,
 # the eMSP picks its own id on receipt).
-
-type PushKind =
-    LocationPut({
-      country_code :: Str,
-      party_id     :: Str,
-      location_id  :: Str,
-      body         :: jv.Json,
-    })
-  | LocationPatch({
-      country_code :: Str,
-      party_id     :: Str,
-      location_id  :: Str,
-      body         :: jv.Json,
-    })
-  | EvsePatch({
-      country_code :: Str,
-      party_id     :: Str,
-      location_id  :: Str,
-      evse_uid     :: Str,
-      body         :: jv.Json,
-    })
-  | ConnectorPatch({
-      country_code :: Str,
-      party_id     :: Str,
-      location_id  :: Str,
-      evse_uid     :: Str,
-      connector_id :: Str,
-      body         :: jv.Json,
-    })
-  | SessionPut({
-      country_code :: Str,
-      party_id     :: Str,
-      session_id   :: Str,
-      body         :: jv.Json,
-    })
-  | SessionPatch({
-      country_code :: Str,
-      party_id     :: Str,
-      session_id   :: Str,
-      body         :: jv.Json,
-    })
-  | CdrPost({
-      body :: jv.Json,
-    })
-  | TokenPut({
-      country_code :: Str,
-      party_id     :: Str,
-      token_uid    :: Str,
-      body         :: jv.Json,
-    })
-
-# ---- Pure helpers: per-kind URL / method / body -----------------
+type PushKind = LocationPut({ country_code :: Str, party_id :: Str, location_id :: Str, body :: jv.Json }) | LocationPatch({ country_code :: Str, party_id :: Str, location_id :: Str, body :: jv.Json }) | EvsePatch({ country_code :: Str, party_id :: Str, location_id :: Str, evse_uid :: Str, body :: jv.Json }) | ConnectorPatch({ country_code :: Str, party_id :: Str, location_id :: Str, evse_uid :: Str, connector_id :: Str, body :: jv.Json }) | SessionPut({ country_code :: Str, party_id :: Str, session_id :: Str, body :: jv.Json }) | SessionPatch({ country_code :: Str, party_id :: Str, session_id :: Str, body :: jv.Json }) | CdrPost({ body :: jv.Json }) | TokenPut({ country_code :: Str, party_id :: Str, token_uid :: Str, body :: jv.Json })
 
 fn push_method(kind :: PushKind) -> Str
   examples {
-    push_method(CdrPost({ body: JNull })) => "POST",
+    push_method(CdrPost({ body: JNull })) => "POST"
   }
 {
   match kind {
-    LocationPut(_)    => "PUT",
-    LocationPatch(_)  => "PATCH",
-    EvsePatch(_)      => "PATCH",
+    LocationPut(_) => "PUT",
+    LocationPatch(_) => "PATCH",
+    EvsePatch(_) => "PATCH",
     ConnectorPatch(_) => "PATCH",
-    SessionPut(_)     => "PUT",
-    SessionPatch(_)   => "PATCH",
-    CdrPost(_)        => "POST",
-    TokenPut(_)       => "PUT",
+    SessionPut(_) => "PUT",
+    SessionPatch(_) => "PATCH",
+    CdrPost(_) => "POST",
+    TokenPut(_) => "PUT",
   }
 }
 
 fn push_body(kind :: PushKind) -> jv.Json {
   match kind {
-    LocationPut(p)    => p.body,
-    LocationPatch(p)  => p.body,
-    EvsePatch(p)      => p.body,
+    LocationPut(p) => p.body,
+    LocationPatch(p) => p.body,
+    EvsePatch(p) => p.body,
     ConnectorPatch(p) => p.body,
-    SessionPut(p)     => p.body,
-    SessionPatch(p)   => p.body,
-    CdrPost(p)        => p.body,
-    TokenPut(p)       => p.body,
+    SessionPut(p) => p.body,
+    SessionPatch(p) => p.body,
+    CdrPost(p) => p.body,
+    TokenPut(p) => p.body,
   }
 }
 
 fn push_url(base_url :: Str, kind :: PushKind) -> Str {
   match kind {
-    LocationPut(p)    => location_url(base_url, p.country_code, p.party_id, p.location_id),
-    LocationPatch(p)  => location_url(base_url, p.country_code, p.party_id, p.location_id),
-    EvsePatch(p)      => evse_url(base_url, p.country_code, p.party_id,
-                                  p.location_id, p.evse_uid),
-    ConnectorPatch(p) => connector_url(base_url, p.country_code, p.party_id,
-                                       p.location_id, p.evse_uid, p.connector_id),
-    SessionPut(p)     => session_url(base_url, p.country_code, p.party_id, p.session_id),
-    SessionPatch(p)   => session_url(base_url, p.country_code, p.party_id, p.session_id),
-    CdrPost(_)        => join4(base_url, "/cdrs", "", ""),
-    TokenPut(p)       => token_url(base_url, p.country_code, p.party_id, p.token_uid),
+    LocationPut(p) => location_url(base_url, p.country_code, p.party_id, p.location_id),
+    LocationPatch(p) => location_url(base_url, p.country_code, p.party_id, p.location_id),
+    EvsePatch(p) => evse_url(base_url, p.country_code, p.party_id, p.location_id, p.evse_uid),
+    ConnectorPatch(p) => connector_url(base_url, p.country_code, p.party_id, p.location_id, p.evse_uid, p.connector_id),
+    SessionPut(p) => session_url(base_url, p.country_code, p.party_id, p.session_id),
+    SessionPatch(p) => session_url(base_url, p.country_code, p.party_id, p.session_id),
+    CdrPost(_) => join4(base_url, "/cdrs", "", ""),
+    TokenPut(p) => token_url(base_url, p.country_code, p.party_id, p.token_uid),
   }
 }
 
 # URL-builder helpers. Spelled out per-shape rather than via a
 # variadic `join` so each call site is concrete and re-orderings
 # are loud.
-
 fn location_url(base :: Str, cc :: Str, pid :: Str, loc :: Str) -> Str
   examples {
-    location_url("https://emsp.example/ocpi/2.2.1", "NL", "TNM", "L1") =>
-      "https://emsp.example/ocpi/2.2.1/locations/NL/TNM/L1",
+    location_url("https://emsp.example/ocpi/2.2.1", "NL", "TNM", "L1") => "https://emsp.example/ocpi/2.2.1/locations/NL/TNM/L1"
   }
 {
   join4(base, "/locations/", cc, str.concat("/", str.concat(pid, str.concat("/", loc))))
 }
 
-fn evse_url(
-  base :: Str, cc :: Str, pid :: Str, loc :: Str, evse :: Str
-) -> Str {
+fn evse_url(base :: Str, cc :: Str, pid :: Str, loc :: Str, evse :: Str) -> Str {
   str.concat(location_url(base, cc, pid, loc), str.concat("/", evse))
 }
 
-fn connector_url(
-  base :: Str, cc :: Str, pid :: Str, loc :: Str, evse :: Str, conn :: Str
-) -> Str {
+fn connector_url(base :: Str, cc :: Str, pid :: Str, loc :: Str, evse :: Str, conn :: Str) -> Str {
   str.concat(evse_url(base, cc, pid, loc, evse), str.concat("/", conn))
 }
 
 fn session_url(base :: Str, cc :: Str, pid :: Str, sess :: Str) -> Str
   examples {
-    session_url("https://emsp.example/ocpi/2.3.0", "DE", "ABC", "S-7") =>
-      "https://emsp.example/ocpi/2.3.0/sessions/DE/ABC/S-7",
+    session_url("https://emsp.example/ocpi/2.3.0", "DE", "ABC", "S-7") => "https://emsp.example/ocpi/2.3.0/sessions/DE/ABC/S-7"
   }
 {
   join4(base, "/sessions/", cc, str.concat("/", str.concat(pid, str.concat("/", sess))))
@@ -236,26 +173,16 @@ fn join4(a :: Str, b :: Str, c :: Str, d :: Str) -> Str {
 # retry per `RetryPolicy`. The caller supplies a `from_party`
 # because that's a CPO-side identity, not a property of the
 # `PushTarget`.
-
-fn push(
-  policy     :: client.RetryPolicy,
-  from_party :: party.PartyId,
-  target     :: PushTarget,
-  kind       :: PushKind
-) -> [net, time] Result[jv.Json, client.ClientError] {
+fn push(policy :: client.RetryPolicy, from_party :: party.PartyId, target :: PushTarget, kind :: PushKind) -> [net, time] Result[jv.Json, client.ClientError] {
   let req := build_request(from_party, target, kind)
   client.send_with_retry(req, policy)
 }
 
-fn build_request(
-  from_party :: party.PartyId,
-  target     :: PushTarget,
-  kind       :: PushKind
-) -> HttpRequest {
-  let url    := push_url(target.base_url, kind)
+fn build_request(from_party :: party.PartyId, target :: PushTarget, kind :: PushKind) -> HttpRequest {
+  let url := push_url(target.base_url, kind)
   let method := push_method(kind)
-  let body   := jv.stringify(push_body(kind))
-  let base   := client.base_request(method, url)
+  let body := jv.stringify(push_body(kind))
+  let base := client.base_request(method, url)
   let with_t := client.with_token(base, target.token)
   let with_r := client.with_party_routing(with_t, from_party, target.party)
   client.with_json_body(with_r, body)
@@ -270,15 +197,9 @@ fn build_request(
 #
 # `list.map`'s effect row is open, so the closure's `[net, time]`
 # propagates to the fanout's effect set automatically.
-
-fn push_fanout(
-  policy     :: client.RetryPolicy,
-  from_party :: party.PartyId,
-  targets    :: List[PushTarget],
-  kind       :: PushKind
-) -> [net, time] List[Result[jv.Json, client.ClientError]] {
-  list.map(targets,
-    fn (t :: PushTarget) -> [net, time] Result[jv.Json, client.ClientError] {
-      push(policy, from_party, t, kind)
-    })
+fn push_fanout(policy :: client.RetryPolicy, from_party :: party.PartyId, targets :: List[PushTarget], kind :: PushKind) -> [net, time] List[Result[jv.Json, client.ClientError]] {
+  list.map(targets, fn (t :: PushTarget) -> [net, time] Result[jv.Json, client.ClientError] {
+    push(policy, from_party, t, kind)
+  })
 }
+
