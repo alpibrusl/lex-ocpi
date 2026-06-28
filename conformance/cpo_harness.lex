@@ -27,7 +27,7 @@ import "std.http" as http
 
 import "std.bytes" as bytes
 
-import "std.proc" as proc
+import "std.process" as proc
 
 import "lex-schema/json_value" as jv
 
@@ -310,13 +310,13 @@ fn case_credentials_missing_field_returns_2001() -> cc.Case {
 #
 # std.http's `send` rejects PUT requests under lex 0.9.5 — every
 # call returns Err regardless of body shape. Until the upstream
-# fix lands, the harness shells out to `curl` via `std.proc.spawn`
+# fix lands, the harness shells out to `curl` via `std.process.run`
 # for the PUT cases. Server-side correctness is fully exercised;
 # only the client codepath swaps.
 type CurlResult = { status :: Int, body :: jv.Json }
 
 fn put_via_curl(url :: Str, token :: Str, body :: Str) -> [proc] Result[CurlResult, Str] {
-  match proc.spawn("curl", ["-sS", "-X", "PUT", "-H", str.concat("Authorization: Token ", token), "-H", "content-type: application/json", "-w", "\n%{http_code}", "-d", body, url]) {
+  match proc.run("curl", ["-sS", "-X", "PUT", "-H", str.concat("Authorization: Token ", token), "-H", "content-type: application/json", "-w", "\n%{http_code}", "-d", body, url]) {
     Err(m) => Err(str.concat("curl spawn: ", m)),
     Ok(r) => if r.exit_code == 0 {
       parse_curl_output(r.stdout)
