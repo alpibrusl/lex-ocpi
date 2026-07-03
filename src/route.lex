@@ -147,8 +147,8 @@ fn routes(reg :: Registry) -> List[(Str, Str)] {
 #
 # `dispatch` turns an inbound request into an OCPI response. The
 # response envelope is built using the caller-supplied timestamp —
-# pure code, callable from tests. The effectful adapter (in
-# `route_io.lex`, future work) supplies `time.now_str()`.
+# pure code, callable from tests. The effectful adapter in
+# `route_io.lex` supplies `time.now_str()`.
 fn dispatch(reg :: Registry, req :: OcpiRequest, timestamp :: Str) -> env.OcpiResponse {
   match find(reg, req.method, req.module) {
     None => response_from_handler(reg.on_unknown(req), timestamp),

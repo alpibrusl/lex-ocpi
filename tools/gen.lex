@@ -18,9 +18,10 @@
 #   ✅ int / number `minimum` → IntNonNegative / IntPositive
 #   ✅ arrays of primitives → KStr/KInt/KFloat/KBool element kind
 #   ✅ arrays of inline objects → KObject(<name>_schema())
-#   ✅ `$ref` resolution against `$defs` / `definitions`
 #
 # Deferred (open follow-ups):
+#   ⏭️  `$ref` resolution against `$defs` / `definitions` — a `$ref`
+#       field currently falls through to Err("unsupported field type")
 #   ⏭️  `pattern` / `format` hints (rare in OCPI schemas)
 #   ⏭️  `oneOf` / `allOf` / `anyOf` (OCPI uses inheritance sparingly)
 #   ⏭️  `multipleOf`, exclusive bounds
