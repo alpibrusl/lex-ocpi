@@ -146,8 +146,8 @@ CPO↔eMSP side (HTTP/REST-based).
   without re-invoking; concurrent duplicates poll an `InFlight`
   marker (single-flight) with a deadline fallback. LRU + TTL
   bound the cache size and freshness; defaults match the OCPI
-  spec's 24h replay window. SQL-backed multi-replica variant is
-  a follow-up (wants `route_io.lex` + `std.sql`). Closes
+  spec's 24h replay window. The SQL-backed multi-replica variant
+  ships in `src/idempotency_sql.lex` (with `route_io.lex`). Closes
   [#7](https://github.com/alpibrusl/lex-ocpi/issues/7).
 - **Outbound push fanout** (`src/push.lex`). `PushKind` ADT —
   8 variants covering the OCPI-side CPO→eMSP push catalogue

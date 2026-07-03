@@ -42,11 +42,11 @@
 #     `max_wait_ms` elapses. Same pattern as
 #     `commands_async.wait_for_result`.
 #
-#   * **SQL-backed variant is a separate PR.** The issue lists
-#     `with_idempotency_cache_sql(reg, db)` as the multi-replica
-#     production target; that wants `route_io.lex` (the effectful
-#     route variant — not yet shipped) and `std.sql`. The in-memory
-#     variant covers single-replica deployments today.
+#   * **SQL-backed variant: see `idempotency_sql.lex`.** It pairs
+#     with `route_io.lex` (the effectful route variant) and `std.sql`
+#     as the multi-replica production target
+#     (`dispatch_with_cache_sql`). The in-memory variant here covers
+#     single-replica deployments.
 #
 #   * **Key collision** — the cache key is rendered as
 #     `method|path|request_id|from_cc|from_party_id` with `|` as
