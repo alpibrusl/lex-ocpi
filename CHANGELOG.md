@@ -103,7 +103,7 @@ Live-loop tests (a fake HTTP target that 503s twice then 200s, or a peer that re
 - Per-version `authorize_token(...)` — sender-side `[net]` helper that builds the URL + body, POSTs through `client.post_json`, and decodes the response.
 - `tests/test_authorize.lex` — 23 cases covering decoder happy paths (all 5 variants), negative cases (missing field, wrong type, unknown value), decode→encode round-trip, URL builders (all 3 versions), body builders, receiver-side handler (happy paths + missing-token-uid → 2001), wire-shape round-trip through the handler, and body_validator (4 cases).
 
-**OCPI 2.2.1 surface** — full module parity with `elumobility/ocpi-python`'s 2.2.1 surface:
+**OCPI 2.2.1 surface** — full OCPI 2.2.1 module surface:
 
 - Locations / EVSE / Connector + GeoLocation / Image / StatusSchedule (`src/v221/locations.lex`)
 - Sessions + CdrToken / CdrDimension / ChargingPeriod / Price / ChargingPreferences (`src/v221/sessions.lex`)

@@ -7,8 +7,7 @@ should read this **first**.
 ## 1. What this is
 
 OCPI (Open Charge Point Interface) library for the
-[Lex language](https://github.com/alpibrusl/lex-lang), in the spirit of
-[elumobility/ocpi-python](https://github.com/elumobility/ocpi-python).
+[Lex language](https://github.com/alpibrusl/lex-lang).
 Envelope + headers + role catalogues + lex-schema-backed payload
 validators + a pure dispatch path, for OCPI 2.2.1 (with 2.1.1 / 2.3.0
 slot-in directories planned).
