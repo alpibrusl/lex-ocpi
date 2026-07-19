@@ -12,10 +12,9 @@ Covers OCPI 2.1.1, 2.2.1, and 2.3.0 (including the Payments module added in 2.3.
 ---
 
 OCPI (Open Charge Point Interface) library for the
-[Lex language](https://github.com/alpibrusl/lex-lang), in the spirit of
-[elumobility/ocpi-python](https://github.com/elumobility/ocpi-python): the same
-shape — pydantic-style payload validation, role-based module catalogues
-(CPO / eMSP / PTP), and a fixed wire envelope — reworked for Lex's effect
+[Lex language](https://github.com/alpibrusl/lex-lang):
+pydantic-style payload validation, role-based module catalogues
+(CPO / eMSP / PTP), and a fixed wire envelope — built on Lex's effect
 system, variant ADTs, and pure-core / effect-edge split.
 
 Built on top of [lex-schema](https://github.com/alpibrusl/lex-schema) for
@@ -411,10 +410,10 @@ addition of Payments in 2.3.0). lex-ocpi:
   / `role.all_roles_v221()` / `role.all_roles_v230()`) so a single
   peer can advertise the right set per version.
 
-Module-parity matrix vs `elumobility/ocpi-python`:
+OCPI module coverage by version:
 
-| Version | Modules | Parity |
-|---------|---------|--------|
+| Version | Modules | Coverage |
+|---------|---------|----------|
 | 2.1.1   | enums + credentials + locations + sessions + tokens + cdrs + tariffs + commands | 8/8 |
 | 2.2.1   | + chargingprofiles + hubclientinfo | 10/10 |
 | 2.3.0   | + payments (new module), V2X / ISO 15118-20 enum widening, PTP role | 10/10 |
