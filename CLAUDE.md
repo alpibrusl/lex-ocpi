@@ -81,7 +81,7 @@ See [`AGENTS.md`](./AGENTS.md) for the full project context (layout,
 toolchain pinning, dependency sibling layout, test-suite structure,
 upstream-issue triage). The hard constraints worth surfacing here:
 
-- **Pinned toolchain: lex 0.9.3.** CI installs the pre-built release
+- **Pinned toolchain: lex 0.10.7.** CI installs the pre-built release
   binary; install the same locally (`AGENTS.md` §2 has the snippet).
 - **Pure core, effect edge.** Anything under `src/` is pure unless
   its filename ends in `_io.lex`. Effects (`[io], [net], [time],

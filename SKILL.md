@@ -260,5 +260,5 @@ authoring against this library, prefer those over grep.
 
 ## Version
 
-`lex.toml` pins `lex = "0.9.4"`. Library version is `0.1.0` —
+`lex.toml` pins `lex = "0.10.7"`. Library version is `0.1.0` —
 see `README.md` for the deferred-work tracker.
