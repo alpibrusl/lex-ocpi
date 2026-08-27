@@ -145,12 +145,25 @@ fn suite() -> List[Result[Unit, Str]] {
   [test_default_config(), test_table_name_stable(), test_stringify_parse_round_trip(), test_stringify_response_carries_status_code(), test_decode_existing_stale_inflight_is_wait(), test_decode_existing_fresh_inflight_is_wait(), test_decode_existing_completed_is_hit(), test_decode_existing_expired_completed_is_wait(), test_decode_existing_completed_null_body_is_wait()]
 }
 
-fn run_all() -> Int {
+fn run_all_count() -> Int {
   list.fold(suite(), 0, fn (n :: Int, r :: Result[Unit, Str]) -> Int {
     match r {
       Ok(_) => n,
       Err(_) => n + 1,
     }
   })
+}
+
+# `lex test` calls `run_all` and DISCARDS what it returns (lex-lang#757), so a
+# returned failure count reports `ok` however many assertions failed. Only a
+# raise fails a file — the same idiom lex-ems, lex-web and lex-guard use.
+# Run `run_all_count` directly to see which assertions failed.
+fn run_all() -> Unit {
+  if run_all_count() == 0 {
+    ()
+  } else {
+    let __boom := 1 / 0
+    ()
+  }
 }
 

@@ -295,12 +295,25 @@ fn suite() -> List[Result[Unit, Str]] {
   [test_classify_success(), test_classify_client(), test_classify_server(), test_classify_hub(), test_classify_unknown_low(), test_classify_unknown_high(), test_envelope_ok_success(), test_envelope_ok_client_error(), test_envelope_missing_timestamp(), test_envelope_unknown_band(), test_envelope_message_missing_on_err(), test_envelope_message_empty_on_success_ok(), test_envelope_all_collects_errors(), test_module_headers_happy(), test_module_headers_missing_auth(), test_module_headers_wrong_auth_scheme(), test_module_headers_missing_request_id(), test_module_headers_missing_from_party(), test_module_headers_country_wrong_length(), test_echo_happy(), test_echo_request_id_missing(), test_echo_request_id_mismatch(), test_pagination_happy(), test_pagination_total_missing(), test_pagination_limit_invalid(), test_pagination_negative_count(), test_link_header_present(), test_link_header_missing_rel(), test_auth_token_scheme(), test_flow_dispatch_envelope_conforms(), test_flow_unknown_route_envelope_conforms(), test_flow_assertion_helpers_work()]
 }
 
-fn run_all() -> Int {
+fn run_all_count() -> Int {
   list.fold(suite(), 0, fn (n :: Int, r :: Result[Unit, Str]) -> Int {
     match r {
       Ok(_) => n,
       Err(_) => n + 1,
     }
   })
+}
+
+# `lex test` calls `run_all` and DISCARDS what it returns (lex-lang#757), so a
+# returned failure count reports `ok` however many assertions failed. Only a
+# raise fails a file — the same idiom lex-ems, lex-web and lex-guard use.
+# Run `run_all_count` directly to see which assertions failed.
+fn run_all() -> Unit {
+  if run_all_count() == 0 {
+    ()
+  } else {
+    let __boom := 1 / 0
+    ()
+  }
 }
 
