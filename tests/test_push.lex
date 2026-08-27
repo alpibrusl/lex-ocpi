@@ -313,12 +313,25 @@ fn suite() -> List[Result[Unit, Str]] {
   [test_method_location_put(), test_method_location_patch(), test_method_evse_patch(), test_method_connector_patch(), test_method_session_put(), test_method_session_patch(), test_method_cdr_post(), test_method_token_put(), test_url_location_put(), test_url_location_patch(), test_url_evse_patch(), test_url_connector_patch(), test_url_session_put(), test_url_session_patch(), test_url_cdr_post(), test_url_token_put(), test_body_transparent_location_put(), test_body_transparent_cdr_post(), test_location_url_helper(), test_evse_url_helper(), test_connector_url_helper(), test_session_url_helper(), test_token_url_helper(), test_build_method_url_cdr(), test_build_method_url_evse(), test_build_has_authorization(), test_build_has_from_party(), test_build_has_to_party(), test_build_has_json_body()]
 }
 
-fn run_all() -> Int {
+fn run_all_count() -> Int {
   list.fold(suite(), 0, fn (n :: Int, r :: Result[Unit, Str]) -> Int {
     match r {
       Ok(_) => n,
       Err(_) => n + 1,
     }
   })
+}
+
+# `lex test` calls `run_all` and DISCARDS what it returns (lex-lang#757), so a
+# returned failure count reports `ok` however many assertions failed. Only a
+# raise fails a file — the same idiom lex-ems, lex-web and lex-guard use.
+# Run `run_all_count` directly to see which assertions failed.
+fn run_all() -> Unit {
+  if run_all_count() == 0 {
+    ()
+  } else {
+    let __boom := 1 / 0
+    ()
+  }
 }
 

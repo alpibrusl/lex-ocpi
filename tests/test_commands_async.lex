@@ -343,7 +343,20 @@ fn count_failures(rs :: List[Result[Unit, Str]]) -> Int {
   })
 }
 
-fn run_all() -> [concurrent, time] Int {
+fn run_all_count() -> [concurrent, time] Int {
   count_failures(pure_suite()) + count_failures(actor_suite()) + count_failures(wait_suite())
+}
+
+# `lex test` calls `run_all` and DISCARDS what it returns (lex-lang#757), so a
+# returned failure count reports `ok` however many assertions failed. Only a
+# raise fails a file — the same idiom lex-ems, lex-web and lex-guard use.
+# Run `run_all_count` directly to see which assertions failed.
+fn run_all() -> [concurrent, time] Unit {
+  if run_all_count() == 0 {
+    ()
+  } else {
+    let __boom := 1 / 0
+    ()
+  }
 }
 

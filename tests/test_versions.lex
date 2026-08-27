@@ -2,6 +2,8 @@
 
 import "std.str" as str
 
+import "std.int" as int
+
 import "std.list" as list
 
 import "lex-schema/json_value" as jv
@@ -78,12 +80,17 @@ fn test_detail_to_json() -> Result[Unit, Str] {
 }
 
 # ---- Standard CPO endpoint set ----------------------------------
+# The CPO set is nine, not seven: the eMSP set (credentials, locations,
+# sessions, cdrs, tariffs, tokens, commands) plus ChargingProfiles and
+# HubClientInfo, which only a CPO serves. This asserted 7 from before those two
+# modules were added — nobody saw it because `lex test` could not fail
+# (lex-lang#757).
 fn test_standard_cpo_endpoints_count() -> Result[Unit, Str] {
   let eps := versions.standard_cpo_v221_endpoints("https://example.com/ocpi/cpo/2.2.1")
-  if list.len(eps) == 7 {
+  if list.len(eps) == 9 {
     pass()
   } else {
-    fail("standard CPO v2.2.1 should list 7 endpoints")
+    fail(str.concat("standard CPO v2.2.1 should list 9 endpoints, got ", int.to_str(list.len(eps))))
   }
 }
 
@@ -101,12 +108,25 @@ fn suite() -> List[Result[Unit, Str]] {
   [test_version_constants(), test_endpoint_sender(), test_endpoint_receiver(), test_endpoint_to_json_shape(), test_detail_to_json(), test_standard_cpo_endpoints_count(), test_standard_emsp_endpoints_count()]
 }
 
-fn run_all() -> Int {
+fn run_all_count() -> Int {
   list.fold(suite(), 0, fn (n :: Int, r :: Result[Unit, Str]) -> Int {
     match r {
       Ok(_) => n,
       Err(_) => n + 1,
     }
   })
+}
+
+# `lex test` calls `run_all` and DISCARDS what it returns (lex-lang#757), so a
+# returned failure count reports `ok` however many assertions failed. Only a
+# raise fails a file — the same idiom lex-ems, lex-web and lex-guard use.
+# Run `run_all_count` directly to see which assertions failed.
+fn run_all() -> Unit {
+  if run_all_count() == 0 {
+    ()
+  } else {
+    let __boom := 1 / 0
+    ()
+  }
 }
 

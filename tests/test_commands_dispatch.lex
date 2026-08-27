@@ -351,12 +351,25 @@ fn suite() -> List[Result[Unit, Str]] {
   [test_cmd_type_round_trip_start_session(), test_cmd_type_round_trip_stop_session(), test_cmd_type_round_trip_reserve_now(), test_cmd_type_round_trip_cancel_reservation(), test_cmd_type_round_trip_unlock_connector(), test_cmd_type_decode_unknown(), test_resp_type_round_trip_accepted(), test_resp_type_round_trip_rejected(), test_resp_type_round_trip_not_supported(), test_resp_type_round_trip_unknown_session(), test_resp_type_decode_unknown(), test_result_type_accepted(), test_result_type_canceled_reservation(), test_result_type_timeout(), test_result_type_decode_unknown(), test_response_encode_minimal(), test_response_encode_with_timeout(), test_response_decode_round_trip(), test_response_decode_missing_result(), test_result_encode_minimal(), test_result_decode_round_trip(), test_response_url_present(), test_response_url_missing(), test_response_url_non_string(), test_url_start_session(), test_url_unlock_connector(), test_url_cancel_reservation(), test_handler_accepted_branch(), test_handler_rejected_branch(), test_handler_missing_response_url(), test_handler_passes_response_url()]
 }
 
-fn run_all() -> Int {
+fn run_all_count() -> Int {
   list.fold(suite(), 0, fn (n :: Int, r :: Result[Unit, Str]) -> Int {
     match r {
       Ok(_) => n,
       Err(_) => n + 1,
     }
   })
+}
+
+# `lex test` calls `run_all` and DISCARDS what it returns (lex-lang#757), so a
+# returned failure count reports `ok` however many assertions failed. Only a
+# raise fails a file — the same idiom lex-ems, lex-web and lex-guard use.
+# Run `run_all_count` directly to see which assertions failed.
+fn run_all() -> Unit {
+  if run_all_count() == 0 {
+    ()
+  } else {
+    let __boom := 1 / 0
+    ()
+  }
 }
 
