@@ -22,14 +22,6 @@ fn fail(why :: Str) -> Result[Unit, Str] {
   Err(why)
 }
 
-fn assert_eq_str(want :: Str, got :: Str, label :: Str) -> Result[Unit, Str] {
-  if want == got {
-    pass()
-  } else {
-    fail(label)
-  }
-}
-
 fn assert_true(b :: Bool, label :: Str) -> Result[Unit, Str] {
   if b {
     pass()
