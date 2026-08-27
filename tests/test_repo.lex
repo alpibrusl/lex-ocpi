@@ -62,24 +62,25 @@ fn locations_create_ddl() -> Result[Unit, Str] {
 }
 
 # ---- indexes ----------------------------------------------------
-fn tokens_indexes_include_uid() -> Result[Unit, Str] {
-  let found := list.fold(r_toks.indexes(), false, fn (acc :: Bool, ch :: m.DdlChange) -> Bool {
+# Whether the migration declares an index by that exact name. Always used with
+# its exclusion below: asking only whether SOME index is declared would pass on
+# any index at all, including one under a different name, which is the mistake
+# these tests exist to catch.
+fn has_index(changes :: List[m.DdlChange], name :: Str) -> Bool {
+  list.fold(changes, false, fn (acc :: Bool, ch :: m.DdlChange) -> Bool {
     match ch {
-      AddIndex(idx) => acc or idx.name == "idx_ocpi_tokens_uid",
+      AddIndex(idx) => acc or idx.name == name,
       _ => acc,
     }
   })
-  check("tokens uid index", found)
+}
+
+fn tokens_indexes_include_uid() -> Result[Unit, Str] {
+  check("tokens uid index, and no index under a name that was never declared", has_index(r_toks.indexes(), "idx_ocpi_tokens_uid") and not has_index(r_toks.indexes(), "idx_ocpi_tokens_never_declared"))
 }
 
 fn locations_indexes_include_country_party() -> Result[Unit, Str] {
-  let found := list.fold(r_locs.indexes(), false, fn (acc :: Bool, ch :: m.DdlChange) -> Bool {
-    match ch {
-      AddIndex(idx) => acc or idx.name == "idx_ocpi_locations_country_party",
-      _ => acc,
-    }
-  })
-  check("locations country_party index", found)
+  check("locations country_party index, and no index under a name that was never declared", has_index(r_locs.indexes(), "idx_ocpi_locations_country_party") and not has_index(r_locs.indexes(), "idx_ocpi_locations_never_declared"))
 }
 
 # ---- date-range predicate composes ------------------------------
