@@ -28,7 +28,7 @@ Built on top of:
 CI runs against **v0.10.7** pre-built binaries; use the same locally:
 
 ```sh
-LEX_VERSION=v0.10.7
+LEX_VERSION=v0.10.18
 case "$(uname -s)-$(uname -m)" in
   Linux-x86_64)   TARGET=x86_64-unknown-linux-gnu  ;;
   Linux-aarch64)  TARGET=aarch64-unknown-linux-gnu ;;
