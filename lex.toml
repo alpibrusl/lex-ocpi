@@ -1,6 +1,6 @@
 [package]
 name    = "lex-ocpi"
-version = "0.1.0"
+version = "0.1.1"
 lex     = "0.10.18"
 
 # OCPI (Open Charge Point Interface) library for lex-lang.
