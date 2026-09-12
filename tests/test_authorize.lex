@@ -14,7 +14,7 @@
 #     rejects malformed payloads.
 #   - authorize_handler extracts token_uid from path_params, plumbs the
 #     body through body_to_refs, invokes the user fn, and wraps the
-#     resulting AuthorizationResult back into HOk with the same JSON.
+#     resulting AuthorizationResult back into OcpiOk with the same JSON.
 #
 # The end-to-end live-port round-trip (spawn fake eMSP, real
 # authorize_token call over [net]) is deferred to an example program —
@@ -229,7 +229,7 @@ fn test_body_some_stringifies() -> Result[Unit, Str] {
 #
 # Build a fake user-supplied authorize fn, run authorize_handler's
 # returned Handler against a synthetic OcpiRequest, and assert the
-# resulting HandlerResult is HOk-wrapping the AuthorizationInfo with
+# resulting HandlerResult is OcpiOk-wrapping the AuthorizationInfo with
 # the expected `allowed` value.
 fn empty_headers() -> h.OcpiHeaders {
   h.new("", "", "", party.new("", ""), party.new("", ""))
@@ -250,16 +250,16 @@ fn auth_always_blocked(_uid :: Str, _refs :: Option[jv.Json]) -> auth.Authorizat
 
 fn check_handler_allowed(hr :: route.HandlerResult, want :: Str, label :: Str) -> Result[Unit, Str] {
   match hr {
-    HOk(j) => match jv.get_field(j, "allowed") {
-      None => fail(str.concat(label, ": HOk payload missing `allowed`")),
+    OcpiOk(j) => match jv.get_field(j, "allowed") {
+      None => fail(str.concat(label, ": OcpiOk payload missing `allowed`")),
       Some(v) => match jv.as_str(v) {
         None => fail(str.concat(label, ": `allowed` not a string")),
         Some(s) => assert_eq_str(want, s, label),
       },
     },
-    HOkList(_) => fail(str.concat(label, ": expected HOk, got HOkList")),
-    HOkEmpty => fail(str.concat(label, ": expected HOk, got HOkEmpty")),
-    HErr(_) => fail(str.concat(label, ": expected HOk, got HErr")),
+    OcpiOkList(_) => fail(str.concat(label, ": expected OcpiOk, got OcpiOkList")),
+    OcpiOkEmpty => fail(str.concat(label, ": expected OcpiOk, got OcpiOkEmpty")),
+    OcpiErr(_) => fail(str.concat(label, ": expected OcpiOk, got OcpiErr")),
   }
 }
 
@@ -277,10 +277,10 @@ fn test_handler_missing_token_uid() -> Result[Unit, Str] {
   let h := auth221.authorize_handler(auth_always_allowed)
   let req := route.request(route.post(), "tokens", "/x", map.new(), map.new(), empty_headers(), JNull)
   match h(req) {
-    HErr(err) => assert_true(err.code == 2001, "expected 2001 status code"),
-    HOk(_) => fail("expected HErr, got HOk"),
-    HOkList(_) => fail("expected HErr, got HOkList"),
-    HOkEmpty => fail("expected HErr, got HOkEmpty"),
+    OcpiErr(err) => assert_true(err.code == 2001, "expected 2001 status code"),
+    OcpiOk(_) => fail("expected OcpiErr, got OcpiOk"),
+    OcpiOkList(_) => fail("expected OcpiErr, got OcpiOkList"),
+    OcpiOkEmpty => fail("expected OcpiErr, got OcpiOkEmpty"),
   }
 }
 
@@ -291,11 +291,11 @@ fn test_handler_missing_token_uid() -> Result[Unit, Str] {
 fn test_round_trip_handler_to_decoder() -> Result[Unit, Str] {
   let h := auth221.authorize_handler(auth_always_blocked)
   match h(mk_request("RFID-A", JNull)) {
-    HOk(j) => match auth.decode(j) {
+    OcpiOk(j) => match auth.decode(j) {
       Err(m) => fail(str.concat("re-decode failed: ", m)),
       Ok(r) => check_blocked(r),
     },
-    _ => fail("expected HOk"),
+    _ => fail("expected OcpiOk"),
   }
 }
 

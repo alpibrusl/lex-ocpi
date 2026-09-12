@@ -188,7 +188,7 @@ fn get_tariffs(_req :: oroute.OcpiRequest) -> oroute.HandlerResult {
 }
 
 fn put_token(_req :: oroute.OcpiRequest) -> oroute.HandlerResult {
-  HOkEmpty
+  OcpiOkEmpty
 }
 
 fn post_command(_req :: oroute.OcpiRequest) -> oroute.HandlerResult {

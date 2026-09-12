@@ -214,7 +214,7 @@ fn callback_result(response_url :: Str, result :: cmds.CommandResult, token_b64 
 #      eMSP picked when assembling `response_url`)
 #   2. decode the JSON body into a typed `CommandResult`
 #   3. `tell` the inflight actor `Complete(id, result)`
-#   4. reply HOk to the CPO
+#   4. reply OcpiOk to the CPO
 #
 # Step 3 carries `[concurrent]`, but `route.Handler` is typed pure.
 # So we split: this parser is pure and returns a `ResultPost` value
@@ -235,14 +235,14 @@ fn parse_result_post(req :: route.OcpiRequest, extract_response_id :: (route.Ocp
 }
 
 # Convenience: turn a `ResultPost` into an OCPI handler result. The
-# happy path is HOkEmpty (eMSPs typically don't return a body to
+# happy path is OcpiOkEmpty (eMSPs typically don't return a body to
 # the CPO on a successful callback); the two error paths surface
 # the validator-style 2001 with a clear message.
 fn result_post_handler_result(p :: ResultPost) -> route.HandlerResult {
   match p {
-    PostCompleted(_) => HOkEmpty,
-    PostBadResponseId(m) => HErr(oe.invalid_parameters(m)),
-    PostBadBody(m) => HErr(oe.invalid_parameters(m)),
+    PostCompleted(_) => OcpiOkEmpty,
+    PostBadResponseId(m) => OcpiErr(oe.invalid_parameters(m)),
+    PostBadBody(m) => OcpiErr(oe.invalid_parameters(m)),
   }
 }
 

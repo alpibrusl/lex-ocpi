@@ -104,10 +104,10 @@ fn run_entry(entry :: IoRouteEntry, req :: route.OcpiRequest, timestamp :: Str) 
 
 fn response_from_handler(hr :: route.HandlerResult, timestamp :: Str) -> env.OcpiResponse {
   match hr {
-    HOk(payload) => env.ok(payload, timestamp),
-    HOkList(items) => env.ok_list(items, timestamp),
-    HOkEmpty => env.ok_empty(timestamp),
-    HErr(oerr) => env.fail_with_data(oerr.code, oerr.message, oerr.detail, timestamp),
+    OcpiOk(payload) => env.ok(payload, timestamp),
+    OcpiOkList(items) => env.ok_list(items, timestamp),
+    OcpiOkEmpty => env.ok_empty(timestamp),
+    OcpiErr(oerr) => env.fail_with_data(oerr.code, oerr.message, oerr.detail, timestamp),
   }
 }
 

@@ -366,7 +366,7 @@ fn list_take(xs :: List[Str], n :: Int) -> List[Str] {
 }
 
 # Real PUT through curl. The fake CPO's `put_token` handler returns
-# `HOkEmpty` (1000 with null data); the case asserts on the OCPI
+# `OcpiOkEmpty` (1000 with null data); the case asserts on the OCPI
 # status_code rather than the body shape.
 fn case_put_token_returns_ok() -> cc.Case {
   { name: "PUT /ocpi/2.2.1/tokens/DE/ABC/RFID-A returns 1000 envelope (via curl)", run: fn (cfg :: cc.TargetConfig) -> [net, proc] cc.CaseResult {

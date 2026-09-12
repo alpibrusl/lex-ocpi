@@ -10,7 +10,7 @@
 #   - Same for CommandResult (no `timeout` field).
 #   - response_url(body) extraction.
 #   - command_handler: missing response_url → 2001; happy path →
-#     HOk(CommandResponse JSON) with the sync reply the user chose.
+#     OcpiOk(CommandResponse JSON) with the sync reply the user chose.
 #   - build_command_url shape across the 5 command types.
 #
 # The end-to-end live-port round-trip (a fake CPO that returns a
@@ -280,14 +280,14 @@ fn test_handler_accepted_branch() -> Result[Unit, Str] {
   let h := cmds.command_handler(always_accepted)
   let body := JObj([("response_url", JStr("https://emsp.example/cb")), ("session_id", JStr("S1"))])
   match h(mk_request(body)) {
-    HOk(j) => match cmds.decode_command_response(j) {
+    OcpiOk(j) => match cmds.decode_command_response(j) {
       Err(m) => fail(str.concat("response decode failed: ", m)),
       Ok(r) => match r.result {
         CrAccepted => pass(),
         _ => fail("expected CrAccepted"),
       },
     },
-    _ => fail("expected HOk"),
+    _ => fail("expected OcpiOk"),
   }
 }
 
@@ -295,14 +295,14 @@ fn test_handler_rejected_branch() -> Result[Unit, Str] {
   let h := cmds.command_handler(always_rejected)
   let body := JObj([("response_url", JStr("https://emsp.example/cb")), ("session_id", JStr("S1"))])
   match h(mk_request(body)) {
-    HOk(j) => match cmds.decode_command_response(j) {
+    OcpiOk(j) => match cmds.decode_command_response(j) {
       Err(m) => fail(str.concat("response decode failed: ", m)),
       Ok(r) => match r.result {
         CrRejected => pass(),
         _ => fail("expected CrRejected"),
       },
     },
-    _ => fail("expected HOk"),
+    _ => fail("expected OcpiOk"),
   }
 }
 
@@ -310,8 +310,8 @@ fn test_handler_missing_response_url() -> Result[Unit, Str] {
   let h := cmds.command_handler(always_accepted)
   let body := JObj([("session_id", JStr("S1"))])
   match h(mk_request(body)) {
-    HErr(err) => assert_true(err.code == 2001, "expected 2001 status code"),
-    _ => fail("expected HErr for missing response_url"),
+    OcpiErr(err) => assert_true(err.code == 2001, "expected 2001 status code"),
+    _ => fail("expected OcpiErr for missing response_url"),
   }
 }
 
@@ -335,14 +335,14 @@ fn test_handler_passes_response_url() -> Result[Unit, Str] {
   let h := cmds.command_handler(always_accepted_capturing)
   let body := JObj([("response_url", JStr("https://emsp.example/cb/xyz")), ("session_id", JStr("S1"))])
   match h(mk_request(body)) {
-    HOk(j) => match jv.get_field(j, "message") {
+    OcpiOk(j) => match jv.get_field(j, "message") {
       None => fail("message field missing — handler didn't forward url"),
       Some(m) => match m {
         JList(items) => check_captured_url(items),
         _ => fail("message field not a list"),
       },
     },
-    _ => fail("expected HOk"),
+    _ => fail("expected OcpiOk"),
   }
 }
 

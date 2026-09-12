@@ -250,7 +250,7 @@ fn test_auth_token_scheme() -> Result[Unit, Str] {
 # Wire a tiny route.Registry, dispatch a request, assert the
 # response envelope passes conformance.
 fn handler_returning_loc(_req :: route.OcpiRequest) -> route.HandlerResult {
-  HOk(JObj([("id", JStr("LOC-1")), ("name", JStr("Depot 1"))]))
+  OcpiOk(JObj([("id", JStr("LOC-1")), ("name", JStr("Depot 1"))]))
 }
 
 fn build_registry() -> route.Registry {

@@ -9,7 +9,7 @@
 #     in-flight invariants live.
 #
 #   * **Actor end-to-end** — spawn a real `conc.spawn` actor, drive
-#     it through Register → Store → Lookup sequences via the
+#     it through Register → Store → CacheLookup sequences via the
 #     `try_reserve` / `store_response` / `lookup` / `forget` /
 #     `purge` wrappers. `[concurrent]`.
 #
@@ -166,7 +166,7 @@ fn test_handler_first_reserve_run() -> Result[Unit, Str] {
 }
 
 fn test_handler_lookup_miss() -> Result[Unit, Str] {
-  match snd_after(empty(10), Lookup("k-nope", 0)) {
+  match snd_after(empty(10), CacheLookup("k-nope", 0)) {
     Miss => pass(),
     _ => fail("expected Miss for never-registered key"),
   }
@@ -174,7 +174,7 @@ fn test_handler_lookup_miss() -> Result[Unit, Str] {
 
 fn test_handler_lookup_inflight_yields_wait() -> Result[Unit, Str] {
   let s1 := fst_after(empty(10), TryReserve("k4"))
-  match snd_after(s1, Lookup("k4", 0)) {
+  match snd_after(s1, CacheLookup("k4", 0)) {
     Wait => pass(),
     _ => fail("expected Wait on InFlight lookup"),
   }
@@ -183,7 +183,7 @@ fn test_handler_lookup_inflight_yields_wait() -> Result[Unit, Str] {
 fn test_handler_lookup_completed_hit() -> Result[Unit, Str] {
   let s1 := fst_after(empty(10), TryReserve("k5"))
   let s2 := fst_after(s1, Store("k5", mk_response(1000, "OK"), 999999999999))
-  match snd_after(s2, Lookup("k5", 100)) {
+  match snd_after(s2, CacheLookup("k5", 100)) {
     Hit(h) => assert_eq_int(1000, h.response.status_code, "lookup hit"),
     _ => fail("expected Hit for completed lookup"),
   }
@@ -192,7 +192,7 @@ fn test_handler_lookup_completed_hit() -> Result[Unit, Str] {
 fn test_handler_lookup_expired_miss() -> Result[Unit, Str] {
   let s1 := fst_after(empty(10), TryReserve("k6"))
   let s2 := fst_after(s1, Store("k6", mk_response(1000, "OK"), 50))
-  match snd_after(s2, Lookup("k6", 100)) {
+  match snd_after(s2, CacheLookup("k6", 100)) {
     Miss => pass(),
     _ => fail("expected Miss for expired entry"),
   }
@@ -200,10 +200,10 @@ fn test_handler_lookup_expired_miss() -> Result[Unit, Str] {
 
 fn test_handler_forget_clears_inflight() -> Result[Unit, Str] {
   let s1 := fst_after(empty(10), TryReserve("k7"))
-  let s2 := fst_after(s1, Forget("k7"))
+  let s2 := fst_after(s1, CacheForget("k7"))
   match snd_after(s2, TryReserve("k7")) {
     Run => pass(),
-    _ => fail("expected Run after Forget cleared InFlight"),
+    _ => fail("expected Run after CacheForget cleared InFlight"),
   }
 }
 
@@ -214,11 +214,11 @@ fn test_handler_purge_drops_expired() -> Result[Unit, Str] {
   let s3 := fst_after(s2, TryReserve("k9"))
   let s4 := fst_after(s3, Store("k9", mk_response(1000, "OK"), 200))
   let s5 := fst_after(s4, Purge(100))
-  let k8_gone := match snd_after(s5, Lookup("k8", 100)) {
+  let k8_gone := match snd_after(s5, CacheLookup("k8", 100)) {
     Miss => pass(),
     _ => fail("k8 should be purged"),
   }
-  let k9_kept := match snd_after(s5, Lookup("k9", 100)) {
+  let k9_kept := match snd_after(s5, CacheLookup("k9", 100)) {
     Hit(_) => pass(),
     _ => fail("k9 should survive purge"),
   }
@@ -232,11 +232,11 @@ fn test_lru_evicts_oldest() -> Result[Unit, Str] {
   let s2 := fst_after(s1, Store("b", mk_response(1000, "OK"), 999999999999))
   let s3 := fst_after(s2, Store("c", mk_response(1000, "OK"), 999999999999))
   let s4 := fst_after(s3, Store("d", mk_response(1000, "OK"), 999999999999))
-  let a_gone := match snd_after(s4, Lookup("a", 0)) {
+  let a_gone := match snd_after(s4, CacheLookup("a", 0)) {
     Miss => pass(),
     _ => fail("oldest entry a should be evicted"),
   }
-  let bcd_kept := match snd_after(s4, Lookup("d", 0)) {
+  let bcd_kept := match snd_after(s4, CacheLookup("d", 0)) {
     Hit(_) => pass(),
     _ => fail("d should be present"),
   }
@@ -250,11 +250,11 @@ fn test_lru_touch_promotes() -> Result[Unit, Str] {
   let s3 := fst_after(s2, Store("c", mk_response(1000, "OK"), 999999999999))
   let s4 := fst_after(s3, TryReserve("a"))
   let s5 := fst_after(s4, Store("d", mk_response(1000, "OK"), 999999999999))
-  let a_kept := match snd_after(s5, Lookup("a", 0)) {
+  let a_kept := match snd_after(s5, CacheLookup("a", 0)) {
     Hit(_) => pass(),
     _ => fail("a should survive (touched recently)"),
   }
-  let b_gone := match snd_after(s5, Lookup("b", 0)) {
+  let b_gone := match snd_after(s5, CacheLookup("b", 0)) {
     Miss => pass(),
     _ => fail("b should be evicted (now oldest)"),
   }
@@ -265,7 +265,7 @@ fn test_lru_capacity_zero_unbounded() -> Result[Unit, Str] {
   let s := list.fold(["a", "b", "c", "d", "e"], empty(0), fn (acc :: idem.CacheState, k :: Str) -> idem.CacheState {
     fst_after(acc, Store(k, mk_response(1000, "OK"), 999999999999))
   })
-  match snd_after(s, Lookup("a", 0)) {
+  match snd_after(s, CacheLookup("a", 0)) {
     Hit(_) => pass(),
     _ => fail("capacity=0 should be unbounded"),
   }
@@ -292,7 +292,7 @@ fn test_actor_forget_releases() -> [concurrent] Result[Unit, Str] {
   let __lex_discard_3 := idem.forget(actor, "ak2")
   match idem.try_reserve(actor, "ak2") {
     Run => pass(),
-    _ => fail("Forget should release InFlight"),
+    _ => fail("CacheForget should release InFlight"),
   }
 }
 
@@ -322,11 +322,11 @@ fn test_actor_lookup_pending() -> [concurrent] Result[Unit, Str] {
 # from a factory yields two handlers that both return the first
 # value.) Hardcoded function bodies avoid the gotcha.
 fn handler_1000(_req :: route.OcpiRequest) -> route.HandlerResult {
-  HOk(JStr("1000"))
+  OcpiOk(JStr("1000"))
 }
 
 fn handler_2000(_req :: route.OcpiRequest) -> route.HandlerResult {
-  HOk(JStr("2000"))
+  OcpiOk(JStr("2000"))
 }
 
 fn registry_1000() -> route.Registry {

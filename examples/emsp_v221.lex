@@ -169,7 +169,7 @@ fn get_tokens(_req :: oroute.OcpiRequest) -> oroute.HandlerResult {
 # list in `data`. On a well-formed CDR we just return an empty 1000
 # envelope (real eMSPs would persist the CDR for billing).
 fn post_cdr(_req :: oroute.OcpiRequest) -> oroute.HandlerResult {
-  HOkEmpty
+  OcpiOkEmpty
 }
 
 # ---- Registry wiring --------------------------------------------

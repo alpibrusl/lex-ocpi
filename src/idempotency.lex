@@ -38,7 +38,7 @@
 #     serialise ALL requests through the actor mutex if we
 #     processed the user handler inside the actor. Polling lets
 #     the handler run *outside* the actor mutex while waiting
-#     callers periodically `Lookup` until the result arrives or
+#     callers periodically `CacheLookup` until the result arrives or
 #     `max_wait_ms` elapses. Same pattern as
 #     `commands_async.wait_for_result`.
 #
@@ -114,7 +114,7 @@ type CacheSlot = InFlight | Completed({ response :: env.OcpiResponse, expires_at
 type CacheState = { entries :: Map[Str, CacheSlot], lru :: List[Str], capacity :: Int }
 
 # ---- Messages + replies -----------------------------------------
-type CacheMsg = TryReserve(Str) | Store((Str, env.OcpiResponse, Int)) | Forget(Str) | Lookup((Str, Int)) | Purge(Int)
+type CacheMsg = TryReserve(Str) | Store((Str, env.OcpiResponse, Int)) | CacheForget(Str) | CacheLookup((Str, Int)) | Purge(Int)
 
 type CacheReply = Run | Wait | Hit({ response :: env.OcpiResponse }) | Miss | Ack
 
@@ -122,8 +122,8 @@ fn cache_handler(state :: CacheState, msg :: CacheMsg) -> (CacheState, CacheRepl
   match msg {
     TryReserve(k) => handle_try_reserve(state, k),
     Store(k, r, exp_ns) => (insert_completed(state, k, r, exp_ns), Ack),
-    Forget(k) => (remove(state, k), Ack),
-    Lookup(k, now_ns) => (state, lookup_reply(state, k, now_ns)),
+    CacheForget(k) => (remove(state, k), Ack),
+    CacheLookup(k, now_ns) => (state, lookup_reply(state, k, now_ns)),
     Purge(now_ns) => (purge_expired(state, now_ns), Ack),
   }
 }
@@ -136,7 +136,7 @@ fn handle_try_reserve(state :: CacheState, k :: Str) -> (CacheState, CacheReply)
   }
 }
 
-# Lookup is the pollers' path. Distinguishes "still in-flight" from
+# CacheLookup is the pollers' path. Distinguishes "still in-flight" from
 # "cached" from "vanished" (TTL expired or never registered).
 fn lookup_reply(state :: CacheState, k :: Str, now_ns :: Int) -> CacheReply {
   match map.get(state.entries, k) {
@@ -243,11 +243,11 @@ fn store_response(actor :: Actor[CacheState], k :: Str, r :: env.OcpiResponse, e
 }
 
 fn forget(actor :: Actor[CacheState], k :: Str) -> [concurrent] Unit {
-  conc.tell(actor, Forget(k))
+  conc.tell(actor, CacheForget(k))
 }
 
 fn lookup(actor :: Actor[CacheState], k :: Str, now_ns :: Int) -> [concurrent] CacheReply {
-  conc.ask(actor, Lookup(k, now_ns))
+  conc.ask(actor, CacheLookup(k, now_ns))
 }
 
 fn purge(actor :: Actor[CacheState], now_ns :: Int) -> [concurrent] Unit {
@@ -265,7 +265,7 @@ fn purge(actor :: Actor[CacheState], now_ns :: Int) -> [concurrent] Unit {
 #      * Hit → return the cached response (handler not invoked).
 #      * Run → invoke the handler, Store the response with TTL,
 #        return it.
-#      * Wait → poll Lookup until Hit, Miss (TTL expired while
+#      * Wait → poll CacheLookup until Hit, Miss (TTL expired while
 #        we were polling), or max_wait_ms elapses. On timeout
 #        fall back to running the handler ourselves (avoiding
 #        deadlock if the original caller died).

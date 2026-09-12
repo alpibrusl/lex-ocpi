@@ -129,7 +129,7 @@ fn handle(req :: route.OcpiRequest, now :: Str) -> env.OcpiResponse {
 }
 ```
 
-`HandlerResult` is `HOk(jv.Json) | HOkList(List[jv.Json]) | HOkEmpty | HErr(OcpiError)`.
+`HandlerResult` is `OcpiOk(jv.Json) | OcpiOkList(List[jv.Json]) | OcpiOkEmpty | OcpiErr(OcpiError)`.
 The convenience builders are `route.ok` / `route.ok_list` /
 `route.ok_empty` / `route.fail` / `route.fail_with`.
 

@@ -70,7 +70,7 @@ fn request(method :: Str, module :: Str, path :: Str, path_params :: Map[Str, St
 }
 
 # ---- Handler types -----------------------------------------------
-type HandlerResult = HOk(jv.Json) | HOkList(List[jv.Json]) | HOkEmpty | HErr(oe.OcpiError)
+type HandlerResult = OcpiOk(jv.Json) | OcpiOkList(List[jv.Json]) | OcpiOkEmpty | OcpiErr(oe.OcpiError)
 
 type Handler = (OcpiRequest) -> HandlerResult
 
@@ -99,7 +99,7 @@ fn new() -> Registry {
 }
 
 fn default_unknown(req :: OcpiRequest) -> HandlerResult {
-  HErr(oe.err(status.client_error(), str.concat("no handler for ", str.concat(req.method, str.concat(" ", req.module)))))
+  OcpiErr(oe.err(status.client_error(), str.concat("no handler for ", str.concat(req.method, str.concat(" ", req.module)))))
 }
 
 fn with_unknown(reg :: Registry, fb :: Fallback) -> Registry {
@@ -160,7 +160,7 @@ fn run_entry(entry :: RouteEntry, req :: OcpiRequest, timestamp :: Str) -> env.O
   match entry.validator {
     None => response_from_handler(entry.handler(req), timestamp),
     Some(vf) => match vf(req.body) {
-      Err(es) => response_from_handler(HErr(oe.from_schema_errors(es)), timestamp),
+      Err(es) => response_from_handler(OcpiErr(oe.from_schema_errors(es)), timestamp),
       Ok(normalized) => {
         let r2 := request(req.method, req.module, req.path, req.path_params, req.query, req.headers, normalized)
         response_from_handler(entry.handler(r2), timestamp)
@@ -171,43 +171,43 @@ fn run_entry(entry :: RouteEntry, req :: OcpiRequest, timestamp :: Str) -> env.O
 
 fn response_from_handler(hr :: HandlerResult, timestamp :: Str) -> env.OcpiResponse {
   match hr {
-    HOk(payload) => env.ok(payload, timestamp),
-    HOkList(items) => env.ok_list(items, timestamp),
-    HOkEmpty => env.ok_empty(timestamp),
-    HErr(oerr) => env.fail_with_data(oerr.code, oerr.message, oerr.detail, timestamp),
+    OcpiOk(payload) => env.ok(payload, timestamp),
+    OcpiOkList(items) => env.ok_list(items, timestamp),
+    OcpiOkEmpty => env.ok_empty(timestamp),
+    OcpiErr(oerr) => env.fail_with_data(oerr.code, oerr.message, oerr.detail, timestamp),
   }
 }
 
 # ---- Convenience builders for HandlerResult ----------------------
 fn ok(payload :: jv.Json) -> HandlerResult
   examples {
-    ok(JNull) => HOk(JNull)
+    ok(JNull) => OcpiOk(JNull)
   }
 {
-  HOk(payload)
+  OcpiOk(payload)
 }
 
 fn ok_list(items :: List[jv.Json]) -> HandlerResult {
-  HOkList(items)
+  OcpiOkList(items)
 }
 
 fn ok_empty() -> HandlerResult
   examples {
-    ok_empty() => HOkEmpty
+    ok_empty() => OcpiOkEmpty
   }
 {
-  HOkEmpty
+  OcpiOkEmpty
 }
 
 fn fail(oerr :: oe.OcpiError) -> HandlerResult {
-  HErr(oerr)
+  OcpiErr(oerr)
 }
 
 fn fail_with(code :: Int, message :: Str) -> HandlerResult
   examples {
-    fail_with(2003, "Unknown Location: LOC9") => HErr({ code: 2003, message: "Unknown Location: LOC9", detail: JNull })
+    fail_with(2003, "Unknown Location: LOC9") => OcpiErr({ code: 2003, message: "Unknown Location: LOC9", detail: JNull })
   }
 {
-  HErr(oe.err(code, message))
+  OcpiErr(oe.err(code, message))
 }
 

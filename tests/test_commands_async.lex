@@ -302,22 +302,22 @@ fn test_parse_bad_body_unknown_result() -> Result[Unit, Str] {
 fn test_handler_result_ok() -> Result[Unit, Str] {
   let p := PostCompleted({ response_id: "abc", result: cmds.result_accepted() })
   match ca.result_post_handler_result(p) {
-    HOkEmpty => pass(),
-    _ => fail("expected HOkEmpty for completed"),
+    OcpiOkEmpty => pass(),
+    _ => fail("expected OcpiOkEmpty for completed"),
   }
 }
 
 fn test_handler_result_bad_id() -> Result[Unit, Str] {
   match ca.result_post_handler_result(PostBadResponseId("nope")) {
-    HErr(err) => assert_true(err.code == 2001, "expected 2001"),
-    _ => fail("expected HErr"),
+    OcpiErr(err) => assert_true(err.code == 2001, "expected 2001"),
+    _ => fail("expected OcpiErr"),
   }
 }
 
 fn test_handler_result_bad_body() -> Result[Unit, Str] {
   match ca.result_post_handler_result(PostBadBody("nope")) {
-    HErr(err) => assert_true(err.code == 2001, "expected 2001"),
-    _ => fail("expected HErr"),
+    OcpiErr(err) => assert_true(err.code == 2001, "expected 2001"),
+    _ => fail("expected OcpiErr"),
   }
 }
 
